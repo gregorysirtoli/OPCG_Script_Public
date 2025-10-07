@@ -26,6 +26,7 @@ logger = configure_logger()
 # Rate limiter (soft)
 # =========================
 RATE_PER_SEC = float(os.getenv("RATE_PER_SEC", "1.2"))
+FX_API_URL = os.getenv("FX_API_URL")
 BURST = int(os.getenv("BURST", "10"))
 _bucket = TokenBucket(RATE_PER_SEC, BURST)
 
@@ -114,6 +115,7 @@ def main() -> int:
     EXTERNAL_URI_FIELD = os.getenv("EXTERNAL_URI_FIELD", "priceChartingUri")
     CM_ID_FIELD = os.getenv("CM_ID_FIELD", "cardMarketId")
 
+
     # ===== Query Cards (proiezione minima) =====
     projection = {
         "_id": 1,
@@ -131,7 +133,7 @@ def main() -> int:
     )
 
     # ===== FX per Cardmarket (se serve) =====
-    fx = get_fx_eur_usd()
+    fx = get_fx_eur_usd(FX_API_URL)
 
     # ===== Loop sui documenti Cards =====
     PAGE_SIZE = int(os.getenv("MONGO_PAGE_SIZE", "200"))
