@@ -1,0 +1,101 @@
+name: prices-ingestor
+
+on:
+  workflow_dispatch:
+  schedule:
+    #- cron: "0 11 * * *" # 13:00 Europe/Rome durante CEST (UTC+2)
+    - cron: "0 12 * * *" # 13:00 Europe/Rome durante CET  (UTC+1)
+concurrency:
+  group: prices-ingestor-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-batches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      PYTHONUNBUFFERED: "1"
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      MAIL_SUBJECT: "[Ingestor] Report"
+      # Provider module (dalla repo privata clonata come path local)
+      PROVIDERS_MODULE: private_providers.bundle
+      # Opzionale FX
+      FX_API_URL: ${{ secrets.FX_API_URL }}
+      # Tuning
+      PRICES_BATCH: "500"
+      MONGO_PAGE_SIZE: "200"
+      SAMPLE_LIMIT: "0"
+      RATE_PER_SEC: "1.2"
+      BURST: "10"
+
+    steps:
+      # Time gate: esegue i passi successivi solo se in Roma è davvero 13:00,
+      # oppure se il trigger è manuale (workflow_dispatch)
+      - name: Time gate (Europe/Rome 13:00)
+        id: timegate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          hour=$(TZ=Europe/Rome date +%H)
+          echo "Current hour Europe/Rome: $hour"
+          if [ "$hour" = "13" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.timegate.outputs.run == 'true'
+
+      # Checkout repo privata con token read-only (fine-grained PAT o Deploy Key)
+      - name: Checkout private providers
+        if: steps.timegate.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: gregorysirtoli/OPCG_Script_Public # DOVE prendere il codice privato
+          token: ${{ secrets.PROVIDERS_TOKEN }} # CON COSA autorizzarti a leggerlo
+          path: private_providers # DOVE clonarlo nella workspace del job
+
+      - uses: actions/setup-python@v5
+        if: steps.timegate.outputs.run == 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        if: steps.timegate.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Install deps
+        if: steps.timegate.outputs.run == 'true'
+        run: python -m pip install -r requirements.txt
+
+      - name: Run shard
+        if: steps.timegate.outputs.run == 'true'
+        run: |
+          python -m src.ingest.main --shard-index "${{ matrix.shard }}" --shard-total "4"
+
+      - name: Upload logs (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.shard }}
+          path: "*.log"
+          retention-days: 3
