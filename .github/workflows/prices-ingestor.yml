@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   run-batches:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 355
     strategy:
       fail-fast: false
@@ -37,6 +37,10 @@ jobs:
       SAMPLE_LIMIT: "0"
       RATE_PER_SEC: "1.2"
       BURST: "10"
+      # ====== Secrets per i provider privati ======
+      PRIMARY_URL_TEMPLATE: ${{ secrets.PRIMARY_URL_TEMPLATE }}
+      PRIMARY_REFERER_TEMPLATE: ${{ secrets.PRIMARY_REFERER_TEMPLATE }}
+      SECONDARY_URL_TEMPLATE: ${{ secrets.SECONDARY_URL_TEMPLATE }}
 
     steps:
       # Time gate: esegue i passi successivi solo se in Roma è davvero 13:00,
