@@ -16,3 +16,5 @@ logs/
 
 # OS
 .DS_Store
+
+/prvate_prviders

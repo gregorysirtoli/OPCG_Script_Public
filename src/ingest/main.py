@@ -93,60 +93,72 @@ def main() -> int:
     coll_logs = db.get_collection("Logs")  # crea al primo insert, evita errori
 
     # ===== Providers (public/private) =====
-    providers = load_provider_module(settings.providers_module)
-    logger.info("Loaded providers: %s", ", ".join(p.name for p in providers))
+    # ===== Provider bundle (public/private) =====
+    try:
+        providers = load_provider_module(settings.providers_module)
+    except Exception as e:
+        logger.error("Failed to load providers module '%s': %s", settings.providers_module, e)
+        raise
 
-    # ===== FX (se serve in futuro) =====
-    fx = get_fx_eur_usd(settings.fx_api_url)  # disponibile per eventuali conversioni
-    logger.debug("FX EUR->USD: %.6f", fx)
+    # Trova i provider per nome (puoi cambiare i nomi se nel bundle sono diversi)
+    primary = next((p for p in providers if getattr(p, "name", "") == "primary"), None)
+    secondary = next((p for p in providers if getattr(p, "name", "") == "secondary"), None)
+    if not primary:
+        logger.warning("Primary provider not found – proceeding without primary.")
+    if not secondary:
+        logger.warning("Secondary provider not found – proceeding without secondary.")
 
-    total = 0
-    inserted = 0
-    skipped = 0
+    # ===== Config campi collection Cards =====
+    ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id")
+    PRIMARY_ID_FIELD = os.getenv("PRIMARY_ID_FIELD", "tcgPlayerId")
+    EXTERNAL_URI_FIELD = os.getenv("EXTERNAL_URI_FIELD", "priceChartingUri")
+    CM_ID_FIELD = os.getenv("CM_ID_FIELD", "cardMarketId")
+
+    # ===== Query Cards (proiezione minima) =====
+    projection = {
+        "_id": 1,
+        ITEM_ID_FIELD: 1,
+        PRIMARY_ID_FIELD: 1,
+        EXTERNAL_URI_FIELD: 1,
+        CM_ID_FIELD: 1,
+    }
+
+    shard_idx = getattr(args, "shard_index", 0)
+    shard_total = getattr(args, "shard_total", 1)
+    logger.info(
+        "Field map -> item: %s | primary: %s | external: %s | cm: %s | sharding: %s/%s",
+        ITEM_ID_FIELD, PRIMARY_ID_FIELD, EXTERNAL_URI_FIELD, CM_ID_FIELD, shard_idx, shard_total
+    )
+
+    # ===== FX per Cardmarket (se serve) =====
+    fx = get_fx_eur_usd()
+
+    # ===== Loop sui documenti Cards =====
+    PAGE_SIZE = int(os.getenv("MONGO_PAGE_SIZE", "200"))
+    BATCH = int(os.getenv("PRICES_BATCH", "500"))
+    SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "0"))
+    DISABLE_SHARDING = os.getenv("DISABLE_SHARDING", "false").lower() == "true"
+
     rows_batch: List[Dict[str, Any]] = []
-
-    # proiezione dinamica in base ai campi mappati
-    projection = {"_id": 1, ITEM_ID_FIELD: 1, PRIMARY_ID_FIELD: 1, EXTERNAL_URI_FIELD: 1}
-
+    inserted = 0
+    total = 0
     fetched = 0
     last_id = None
+    reached_limit = False
 
-    def flush_batch(batch: List[Dict[str, Any]]):
-        nonlocal inserted
-        if not batch:
-            return
-        try:
-            res = coll_prices.insert_many(batch, ordered=False)
-            inserted += len(res.inserted_ids)
-            logger.info("Inserted %d docs (total=%d)", len(res.inserted_ids), inserted)
-        except Exception as e:
-            logger.warning("Bulk insert failed (%s). Fallback to single inserts.", e)
-            ok = 0
-            for r in batch:
-                try:
-                    coll_prices.insert_one(r)
-                    ok += 1
-                except Exception as ee:
-                    logger.error("insert_one failed itemId=%s: %s", r.get("itemId"), ee)
-            inserted += ok
-        finally:
-            batch.clear()
-
-    # ===== Paginazione su Cards =====
     while True:
+        if reached_limit:
+            break
+
         q = {}
         if last_id is not None:
             q["_id"] = {"$gt": last_id}
 
-        page_size = (
-            settings.page_size
-            if settings.sample_limit == 0
-            else min(settings.page_size, max(0, settings.sample_limit - fetched))
+        cur = (
+            coll_cards.find(q, projection)
+            .sort([("_id", 1)])
+            .limit(PAGE_SIZE if SAMPLE_LIMIT == 0 else min(PAGE_SIZE, SAMPLE_LIMIT - fetched))
         )
-        if page_size <= 0:
-            break
-
-        cur = coll_cards.find(q, projection).sort([("_id", 1)]).limit(page_size)
         page = list(cur)
         if not page:
             break
@@ -155,107 +167,113 @@ def main() -> int:
         last_id = page[-1]["_id"]
 
         for doc in page:
-            if settings.sample_limit and total >= settings.sample_limit:
+            if SAMPLE_LIMIT and total >= SAMPLE_LIMIT:
+                reached_limit = True
                 break
 
             total += 1
-
-            # Sharding
-            if not DISABLE_SHARDING and not partition_ok(doc["_id"], args.shard_index, args.shard_total):
-                skipped += 1
-                continue
-
             try:
-                item_id = doc.get(ITEM_ID_FIELD)
-                primary_id = doc.get(PRIMARY_ID_FIELD)
-                external_uri_raw = doc.get(EXTERNAL_URI_FIELD)
-                external_uri = (external_uri_raw or "").strip() or None
-
-                if not (primary_id or external_uri):
-                    skipped += 1
-                    logger.debug(
-                        "SKIP %s (no %s and no %s)",
-                        item_id,
-                        PRIMARY_ID_FIELD,
-                        EXTERNAL_URI_FIELD,
-                    )
+                if (not DISABLE_SHARDING) and (not partition_ok(doc["_id"], shard_idx, shard_total)):
                     continue
 
-                # row base
+                item_id = doc.get(ITEM_ID_FIELD)
+                if not item_id:
+                    continue
+
+                primary_id = doc.get(PRIMARY_ID_FIELD)
+                external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
+                cm_id = doc.get(CM_ID_FIELD)
+
+                # Documento base
                 row: Dict[str, Any] = {
                     "createdAt": now_rome(),
                     "itemId": item_id,
                     "currency": "USD",
                 }
 
-                # ===== Fonte primaria (tipicamente JSON) =====
-                price = sellers = listings = None
-                for p in providers:
+                # ===== Primary =====
+                if primary and primary_id:
                     try:
-                        _bucket.acquire()
-                        pr, se, li = p.fetch_primary_price(primary_id)
-                        price = price or pr
-                        sellers = sellers or se
-                        listings = listings or li
+                        price, sellers, listings = primary.fetch_primary_price(primary_id)
+                        if price is not None:
+                            row["pricePrimary"] = float(price)
+                        if sellers is not None:
+                            row["sellers"] = int(sellers)
+                        if listings is not None:
+                            row["listings"] = int(listings)
                     except Exception as e:
-                        logger.debug("provider %s primary failed: %s", p.name, e)
+                        logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, e)
 
-                row["pricePrimary"] = price
-                row["sellers"] = sellers
-                row["listings"] = listings
+                # ===== Secondary (breakdown grading + cardmarket) =====
+                # Passiamo al provider le info utili: uri esterna, cm id, fx ecc.
+                if secondary and (external_uri or cm_id):
+                    card_info = {
+                        "itemId": item_id,
+                        "externalUri": external_uri,
+                        "cardMarketId": cm_id,
+                        "eur_usd": fx,  # se il provider vuole convertire
+                    }
+                    try:
+                        price_details_map, updates_map = secondary.fetch_secondary_breakdown(card_info)
 
-                # ===== Fonte secondaria (tipicamente HTML, breakdown dettagli) =====
-                details: Dict[str, Any] = {}
-                updates: Dict[str, Any] = {}
-                if external_uri:
-                    for p in providers:
-                        try:
-                            _bucket.acquire()
-                            d, u = p.fetch_secondary_breakdown(
-                                {"id": item_id, "externalUri": external_uri}
-                            )
-                            if d:
-                                details.update({k: v for k, v in d.items() if v is not None})
-                            if u:
-                                updates.update({k: v for k, v in u.items() if v is not None})
-                        except Exception as e:
-                            logger.debug("provider %s secondary failed: %s", p.name, e)
+                        # --- unisci i dettagli prezzo (PSA/BGS/CGC + pricePriceCharting + cm*) ---
+                        # Attesi (facoltativi):
+                        #   priceUngraded, priceGrade7, priceGrade8, priceGrade9, priceGrade95,
+                        #   psa10, sgc10, cgc10, cgc10pristine, bsg10, bsg10black, pricePriceCharting,
+                        #   cmPriceTrend, cmAvg30d, cmAvg7d, cmAvg1d, cmPriceAvg, cmPriceLow, cmFrom, cmAvailableItems
+                        for k, v in (price_details_map or {}).items():
+                            if v is not None:
+                                row[k] = v
 
-                row.update(details)
+                        # --- eventuali update soft su Cards (es. PriceChartingId, normalizzazione URI, ecc.) ---
+                        if updates_map:
+                            updates_clean = {}
+                            if "PriceChartingId" in updates_map and updates_map["PriceChartingId"] is not None:
+                                updates_clean["PriceChartingId"] = int(updates_map["PriceChartingId"])
+                            if "priceChartingUri" in updates_map and updates_map["priceChartingUri"]:
+                                # normalizza a lower se vuoi
+                                updates_clean["priceChartingUri"] = str(updates_map["priceChartingUri"]).lower()
+                            if updates_clean:
+                                updates_clean["updatedAt"] = datetime.utcnow()
+                                coll_cards.update_one({"_id": doc["_id"]}, {"$set": updates_clean})
 
-                # eventuale update parziale su Cards (es. externalId, externalUri normalizzata, updatedAt)
-                if updates:
-                    updates["updatedAt"] = datetime.now(timezone.utc)
-                    coll_cards.update_one({ITEM_ID_FIELD: item_id}, {"$set": updates})
+                    except Exception as e:
+                        logger.warning("Secondary error itemId=%s: %s", item_id, e)
+
+                # Se non c’è nulla da inserire oltre a createdAt/itemId, salta
+                if len(row.keys()) <= 3:
+                    continue
 
                 rows_batch.append(row)
 
-                if len(rows_batch) >= settings.batch_size:
-                    flush_batch(rows_batch)
+                if len(rows_batch) >= BATCH:
+                    try:
+                        res = coll_prices.insert_many(rows_batch, ordered=False)
+                        inserted += len(res.inserted_ids)
+                        logger.info("Mongo batch insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+                    finally:
+                        rows_batch.clear()
 
             except Exception as e:
-                logger.error(
-                    "Error on item %s: %s\n%s",
-                    doc.get(ITEM_ID_FIELD),
-                    e,
-                    traceback.format_exc(),
-                )
+                logger.error("Error on item _id=%s: %s\n%s", doc.get("_id"), e, traceback.format_exc())
                 continue
 
-        if settings.sample_limit and fetched >= settings.sample_limit:
+        if SAMPLE_LIMIT and fetched >= SAMPLE_LIMIT:
             break
 
-    # flush finale
-    flush_batch(rows_batch)
+    if rows_batch:
+        try:
+            res = coll_prices.insert_many(rows_batch, ordered=False)
+            inserted += len(res.inserted_ids)
+            logger.info("Mongo final insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+        finally:
+            rows_batch.clear()
 
-    summary = (
-        f"=== Report Ingestor ===\n"
-        f"Tot: {total}\n"
-        f"Inserted: {inserted}\n"
-        f"Skipped: {skipped}\n"
-    )
+    summary = f"Inserted: {inserted} / Scanned: {total}"
     logger.info(summary)
     send_email(os.getenv("MAIL_SUBJECT", "[Ingestor] Report"), summary)
+    return 0
+
 
     # log su collection Logs
     try:
