@@ -67,7 +67,7 @@ def main() -> int:
     db = client[settings.mongodb_db]
     coll_cards = db["Cards"]
     coll_prices = db["Prices_TEST"]
-    coll_logs = db.get("Logs", None)
+    coll_logs = db["Logs"]
 
     # Provider loading
     # (aggiungi qui eventuale caricamento provider e logica di ingest)

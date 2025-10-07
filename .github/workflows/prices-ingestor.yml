@@ -65,7 +65,7 @@ jobs:
         if: steps.timegate.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
-          repository: gregorysirtoli/OPCG_Script_Public # DOVE prendere il codice privato
+          repository: gregorysirtoli/OPCG_Script_Private # DOVE prendere il codice privato
           token: ${{ secrets.PROVIDERS_TOKEN }} # CON COSA autorizzarti a leggerlo
           path: private_providers # DOVE clonarlo nella workspace del job
 
