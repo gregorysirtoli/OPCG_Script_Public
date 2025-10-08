@@ -72,7 +72,7 @@ def main() -> int:
     logger.info("=== Start Ingestor ===")
 
     # ===== Field mapping (override da ENV se necessario) =====
-    ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id")
+    ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id") or "id"
     PRIMARY_ID_FIELD = os.getenv("PRIMARY_ID_FIELD")
     EXTERNAL_URI_FIELD = os.getenv("EXTERNAL_URI_FIELD")
     EXTERNAL_ID_FIELD = os.getenv("EXTERNAL_ID_FIELD")

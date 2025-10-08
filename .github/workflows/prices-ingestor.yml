@@ -21,23 +21,23 @@ jobs:
       # Modulo providers privato
       PROVIDERS_MODULE: private_providers.bundle
 
-      # === PRIMARY ===
+      # === PRIMARY (RED01) ===
       PRIMARY_URL_TEMPLATE: ${{ secrets.PRIMARY_URL_TEMPLATE }}
       PRIMARY_REFERER_TEMPLATE: ${{ secrets.PRIMARY_REFERER_TEMPLATE }}
       PRIMARY_HEADER_TEMPLATE: ${{ secrets.PRIMARY_HEADER_TEMPLATE }}
 
-      # === SECONDARY ===
+      # === SECONDARY (RED02) ===
       SECONDARY_LABEL_MAP: ${{ secrets.SECONDARY_LABEL_MAP }}
       SECONDARY_SELECTORS: ${{ secrets.SECONDARY_SELECTORS }}
 
-      # === CM ===
+      # === CM (RED04) ===
       CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_URL }}
 
       # ===  FX ===
       FX_API_URL: ${{ secrets.FX_API_URL }}
 
       # === MAPPING CAMPI ===
-      ITEM_ID_FIELD: ${{ secrets.ITEM_ID_FIELD }}
+      ITEM_ID_FIELD: id
       PRIMARY_ID_FIELD: ${{ secrets.PRIMARY_ID_FIELD }}
       EXTERNAL_URI_FIELD: ${{ secrets.EXTERNAL_URI_FIELD }}
       EXTERNAL_ID_FIELD: ${{ secrets.EXTERNAL_ID_FIELD }}
