@@ -152,7 +152,8 @@ def main() -> int:
         if reached_limit:
             break
 
-        q = {}
+        #q = {} # nessun filtro
+        q = {"setId": "OP01"} # filtra per setId
         if last_id is not None:
             q["_id"] = {"$gt": last_id}
 
