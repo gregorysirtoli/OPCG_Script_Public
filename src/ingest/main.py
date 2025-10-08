@@ -13,7 +13,7 @@ from pymongo import MongoClient
 from src.core.config import ROME, load_settings
 from src.core.emailer import send_email
 from src.core.logging_setup import configure_logger
-from src.core.utils import TokenBucket, eur_to_usd, get_fx_eur_usd
+from src.core.utils import TokenBucket, get_fx_eur_usd
 
 # =========================
 # ENV & Logger
@@ -81,24 +81,28 @@ def main() -> int:
     DISABLE_SHARDING = os.getenv("DISABLE_SHARDING", "false").lower() == "true"
 
     logger.info(
-        "Field map -> item: %s | primary: %s | external: %s | extId: %s | cm: %s | sharding: %s",
-        ITEM_ID_FIELD, PRIMARY_ID_FIELD, EXTERNAL_URI_FIELD, EXTERNAL_ID_FIELD, CM_ID_FIELD,
+        "Field map loaded | item: %s | primary: %s | externalUri: %s | externalId: %s | cmId: %s | sharding: %s",
+        ITEM_ID_FIELD,
+        "set" if PRIMARY_ID_FIELD else "unset",
+        "set" if EXTERNAL_URI_FIELD else "unset",
+        "set" if EXTERNAL_ID_FIELD else "unset",
+        "set" if CM_ID_FIELD else "unset",
         "OFF" if DISABLE_SHARDING else f"{args.shard_index}/{args.shard_total}",
     )
+
 
     # ===== DB =====
     client = MongoClient(settings.mongodb_uri, tz_aware=True)
     db = client[settings.mongodb_db]
     coll_cards = db["Cards"]
     coll_prices = db["Prices_TEST"]
-    coll_logs = db.get_collection("Logs")  # crea al primo insert, evita errori
+    coll_logs = db.get_collection("Logs")
 
     # ===== Providers (public/private) =====
-    # ===== Provider bundle (public/private) =====
     try:
         providers = load_provider_module(settings.providers_module)
     except Exception as e:
-        logger.error("Failed to load providers module '%s': %s", settings.providers_module, e)
+        logger.error("Failed to load providers module")
         raise
 
     # Trova i provider per nome (puoi cambiare i nomi se nel bundle sono diversi)
@@ -148,8 +152,8 @@ def main() -> int:
         if reached_limit:
             break
 
-        #q = {} # nessun filtro
-        q = {"setId": "OP01"} # filtra per setId
+        q = {} # nessun filtro
+        #q = {"setId": "OP01"} # filtra per setId
         if last_id is not None:
             q["_id"] = {"$gt": last_id}
 
@@ -184,10 +188,12 @@ def main() -> int:
                 cm_id = doc.get(CM_ID_FIELD)
 
                 # Documento base
+                dt_now = now_rome()
                 row: Dict[str, Any] = {
                     "createdAt": now_rome(),
                     "itemId": item_id,
                     "currency": "USD",
+                    "weekNumber": dt_now.isocalendar().week, 
                 }
 
                 # ===== Primary =====
@@ -203,7 +209,7 @@ def main() -> int:
                     except Exception as e:
                         logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, e)
 
-                # ===== Secondary (breakdown grading + cardmarket) =====
+                # ===== Secondary (breakdown grading + cm) =====
                 # Passiamo al provider le info utili: uri esterna, cm id, fx ecc.
                 if secondary and (external_uri or cm_id):
                     card_info = {
@@ -250,12 +256,13 @@ def main() -> int:
                     try:
                         res = coll_prices.insert_many(rows_batch, ordered=False)
                         inserted += len(res.inserted_ids)
-                        logger.info("Mongo batch insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+                        logger.info("Batch insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
                     finally:
                         rows_batch.clear()
 
             except Exception as e:
-                logger.error("Error on item _id=%s: %s\n%s", doc.get("_id"), e, traceback.format_exc())
+                logger.error("Error on item _id=%s: %s", doc.get("_id"), e.__class__.__name__)
+                logger.debug("Traceback:\n%s", traceback.format_exc())
                 continue
 
         if SAMPLE_LIMIT and fetched >= SAMPLE_LIMIT:
@@ -265,7 +272,7 @@ def main() -> int:
         try:
             res = coll_prices.insert_many(rows_batch, ordered=False)
             inserted += len(res.inserted_ids)
-            logger.info("Mongo final insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+            logger.info("Final insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
         finally:
             rows_batch.clear()
 
