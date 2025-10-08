@@ -73,16 +73,16 @@ def main() -> int:
 
     # ===== Field mapping (override da ENV se necessario) =====
     ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id")
-    PRIMARY_ID_FIELD = os.getenv("PRIMARY_ID_FIELD", "tcgPlayerId")
-    EXTERNAL_URI_FIELD = os.getenv("EXTERNAL_URI_FIELD", "priceChartingUri")
+    PRIMARY_ID_FIELD = os.getenv("PRIMARY_ID_FIELD")
+    EXTERNAL_URI_FIELD = os.getenv("EXTERNAL_URI_FIELD")
+    EXTERNAL_ID_FIELD = os.getenv("EXTERNAL_ID_FIELD")
+    CM_ID_FIELD = os.getenv("CM_ID_FIELD")
     # toggle rapido per test senza partizionamento
     DISABLE_SHARDING = os.getenv("DISABLE_SHARDING", "false").lower() == "true"
 
     logger.info(
-        "Field map -> item: %s | primary: %s | external: %s | sharding: %s",
-        ITEM_ID_FIELD,
-        PRIMARY_ID_FIELD,
-        EXTERNAL_URI_FIELD,
+        "Field map -> item: %s | primary: %s | external: %s | extId: %s | cm: %s | sharding: %s",
+        ITEM_ID_FIELD, PRIMARY_ID_FIELD, EXTERNAL_URI_FIELD, EXTERNAL_ID_FIELD, CM_ID_FIELD,
         "OFF" if DISABLE_SHARDING else f"{args.shard_index}/{args.shard_total}",
     )
 
@@ -109,13 +109,6 @@ def main() -> int:
     if not secondary:
         logger.warning("Secondary provider not found – proceeding without secondary.")
 
-    # ===== Config campi collection Cards =====
-    ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id")
-    PRIMARY_ID_FIELD = os.getenv("PRIMARY_ID_FIELD", "tcgPlayerId")
-    EXTERNAL_URI_FIELD = os.getenv("EXTERNAL_URI_FIELD", "priceChartingUri")
-    CM_ID_FIELD = os.getenv("CM_ID_FIELD", "cardMarketId")
-
-
     # ===== Query Cards (proiezione minima) =====
     projection = {
         "_id": 1,
@@ -132,8 +125,11 @@ def main() -> int:
         ITEM_ID_FIELD, PRIMARY_ID_FIELD, EXTERNAL_URI_FIELD, CM_ID_FIELD, shard_idx, shard_total
     )
 
-    # ===== FX per Cardmarket (se serve) =====
-    fx = get_fx_eur_usd(FX_API_URL)
+    # ===== FX per cambio EUR/USD =====
+    if FX_API_URL:
+        fx = get_fx_eur_usd(FX_API_URL)
+    else:
+        fx = float(os.getenv("FX_FIXED_RATE", "1.15"))
 
     # ===== Loop sui documenti Cards =====
     PAGE_SIZE = int(os.getenv("MONGO_PAGE_SIZE", "200"))
@@ -213,29 +209,30 @@ def main() -> int:
                     card_info = {
                         "itemId": item_id,
                         "externalUri": external_uri,
+                        "priceChartingUri": external_uri,
                         "cardMarketId": cm_id,
-                        "eur_usd": fx,  # se il provider vuole convertire
+                        "eur_usd": fx,
                     }
                     try:
                         price_details_map, updates_map = secondary.fetch_secondary_breakdown(card_info)
 
-                        # --- unisci i dettagli prezzo (PSA/BGS/CGC + pricePriceCharting + cm*) ---
+                        # --- unisci i dettagli prezzo (PSA/BGS/CGC + price + cm*) ---
                         # Attesi (facoltativi):
                         #   priceUngraded, priceGrade7, priceGrade8, priceGrade9, priceGrade95,
-                        #   psa10, sgc10, cgc10, cgc10pristine, bsg10, bsg10black, pricePriceCharting,
+                        #   psa10, sgc10, cgc10, cgc10pristine, bsg10, bsg10black, price,
                         #   cmPriceTrend, cmAvg30d, cmAvg7d, cmAvg1d, cmPriceAvg, cmPriceLow, cmFrom, cmAvailableItems
                         for k, v in (price_details_map or {}).items():
                             if v is not None:
                                 row[k] = v
 
-                        # --- eventuali update soft su Cards (es. PriceChartingId, normalizzazione URI, ecc.) ---
+                        # --- eventuali update soft su Cards ---
                         if updates_map:
                             updates_clean = {}
-                            if "PriceChartingId" in updates_map and updates_map["PriceChartingId"] is not None:
-                                updates_clean["PriceChartingId"] = int(updates_map["PriceChartingId"])
-                            if "priceChartingUri" in updates_map and updates_map["priceChartingUri"]:
+                            if EXTERNAL_ID_FIELD in updates_map and updates_map[EXTERNAL_ID_FIELD] is not None:
+                                updates_clean[EXTERNAL_ID_FIELD] = int(updates_map[EXTERNAL_ID_FIELD])
+                            if EXTERNAL_URI_FIELD in updates_map and updates_map[EXTERNAL_URI_FIELD]:
                                 # normalizza a lower se vuoi
-                                updates_clean["priceChartingUri"] = str(updates_map["priceChartingUri"]).lower()
+                                updates_clean[EXTERNAL_URI_FIELD] = str(updates_map[EXTERNAL_URI_FIELD]).lower()
                             if updates_clean:
                                 updates_clean["updatedAt"] = datetime.utcnow()
                                 coll_cards.update_one({"_id": doc["_id"]}, {"$set": updates_clean})
@@ -275,15 +272,13 @@ def main() -> int:
     summary = f"Inserted: {inserted} / Scanned: {total}"
     logger.info(summary)
     send_email(os.getenv("MAIL_SUBJECT", "[Ingestor] Report"), summary)
-    return 0
-
 
     # log su collection Logs
     try:
         coll_logs.insert_one(
             {
                 "type": "Ingestor",
-                "description": f"Inserted: {inserted}, Skipped: {skipped}",
+                "description": f"Inserted: {inserted} / Scanned: {total}",
                 "createdAt": datetime.now(timezone.utc),
             }
         )
