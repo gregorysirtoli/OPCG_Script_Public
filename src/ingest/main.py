@@ -30,10 +30,8 @@ FX_API_URL = os.getenv("FX_API_URL")
 BURST = int(os.getenv("BURST", "10"))
 _bucket = TokenBucket(RATE_PER_SEC, BURST)
 
-
 def now_rome() -> datetime:
     return datetime.now(ROME)
-
 
 def load_provider_module(module_name: Optional[str]):
     """
@@ -44,13 +42,12 @@ def load_provider_module(module_name: Optional[str]):
       - fetch_secondary_breakdown(card_info) -> (details_map, updates_map)
     """
     if not module_name:
-        from src.providers.mock import PROVIDERS  # fallback mock
+        from src.providers.mock import PROVIDERS # fallback mock
         return PROVIDERS
     import importlib
 
     m = importlib.import_module(module_name)
     return getattr(m, "PROVIDERS")
-
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
@@ -58,12 +55,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--shard-total", type=int, default=1)
     return ap.parse_args()
 
-
 def partition_ok(mongo_id: Any, shard_idx: int, shard_total: int) -> bool:
     # partizionamento semplice con hash dello _id in stringa
     h = hash(str(mongo_id))
     return (h % shard_total) == shard_idx
-
 
 def main() -> int:
     settings = load_settings()
@@ -71,7 +66,7 @@ def main() -> int:
 
     logger.info("=== Start Ingestor ===")
 
-    # ===== Field mapping (override da ENV se necessario) =====
+    # ===== Field mapping (da ENV) =====
     ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id") or "id"
     PRIMARY_ID_FIELD = os.getenv("PRIMARY_ID_FIELD")
     EXTERNAL_URI_FIELD = os.getenv("EXTERNAL_URI_FIELD")
@@ -89,7 +84,6 @@ def main() -> int:
         "set" if CM_ID_FIELD else "unset",
         "OFF" if DISABLE_SHARDING else f"{args.shard_index}/{args.shard_total}",
     )
-
 
     # ===== DB =====
     client = MongoClient(settings.mongodb_uri, tz_aware=True)
@@ -152,8 +146,7 @@ def main() -> int:
         if reached_limit:
             break
 
-        q = {} # nessun filtro
-        #q = {"setId": "OP01"} # filtra per setId
+        q = {} # nessun filtro in query
         if last_id is not None:
             q["_id"] = {"$gt": last_id}
 
@@ -278,13 +271,13 @@ def main() -> int:
 
     summary = f"Inserted: {inserted} / Scanned: {total}"
     logger.info(summary)
-    send_email(os.getenv("MAIL_SUBJECT", "[Ingestor] Report"), summary)
+    send_email(os.getenv("MAIL_SUBJECT", "[PRICE] Report"), summary)
 
     # log su collection Logs
     try:
         coll_logs.insert_one(
             {
-                "type": "Ingestor",
+                "type": "Prices: Ingestor",
                 "description": f"Inserted: {inserted} / Scanned: {total}",
                 "createdAt": datetime.now(timezone.utc),
             }
