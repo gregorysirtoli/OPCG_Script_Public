@@ -74,7 +74,8 @@ def calcola_icv(prezzi_oltre_10):
     return sum(top3) / sum(prezzi_oltre_10)
 
 # Assegnazione tier
-def determina_tier(ev, icv, pct10):
+def determina_tier(ev, icv, pct10, box_cost: float | None = None):
+    ratio = (ev / box_cost)
     # S
     if (ev >= 60 and icv <= 0.50 and pct10 >= 30): # S1: set ricco e profondo (es. EB02)
         return "S"
@@ -93,7 +94,7 @@ def determina_tier(ev, icv, pct10):
     # B
     if (12 <= ev < 25 and pct10 >= 20): # B1: EV moderato ma con un po' di profondità
         return "B"
-    # C ---
+    # C
     return "C"
 
 # Seleziona il miglior prezzo disponibile da uno snapshot di prezzi
@@ -101,7 +102,7 @@ def pick_best_price(snap: dict) -> float | None:
     # Ordine di preferenza
     if not isinstance(snap, dict):
         return None
-    for k in ("cmAvg7d", "cmAvg1d", "priceTcg", "priceUngraded"):
+    for k in ("cmAvg7d", "cmAvg1d", "cmPriceTrend", "priceTcg", "priceUngraded"):
         v = snap.get(k)
         if isinstance(v, (int, float)):
             return float(v)
@@ -113,7 +114,7 @@ try:
     db = client[MONGODB_DB]
 
     # Selezione dei set validi
-    sets = list(db.Sets.find({ "tierList": { "$ne": False } }, { "id": 1, "name": 1, "logo": 1 }))
+    sets = list(db.Sets.find({ "tierList": { "$ne": False } }, { "id": 1, "name": 1, "logo": 1, "sealedId": 1 }))
     cards = db.Cards
     prices = db.Prices
 
@@ -121,10 +122,16 @@ try:
 
     for s in sets:
         setId = s.get("id")
+        sealedId = s.get("sealedId")
         if not setId:
             continue
 
-        print(f"\n✅ [SET] {setId}")
+        box_cost = None
+        if sealedId:
+            latest_box = prices.find_one({"itemId": sealedId}, sort=[("createdAt", -1)])
+            box_cost = pick_best_price(latest_box)
+
+        print(f"\n✅ [SET] {setId}, sealedId: {sealedId}")
 
         # Filtra solo le carte dei set validi
         card_list = list(cards.find({ "setId": setId, "rarityId": { "$in": list(RARITY_PULLABLE) } }, { "id": 1 }))
@@ -148,18 +155,19 @@ try:
 
         # Calcolo Expected Value (EV)
         ev = calcola_ev(prezzi_pullabili)
-        print(f"🔄 [SET] {setId} - [EV] {ev}")
 
         # Calcolo indice di Concentrazione del Valore (ICV)
         icv = calcola_icv(prezzi_oltre_10)
-        print(f"🔄 [SET] {setId} - [ICV] {icv}")
 
         # Calcolo percentuale delle carte sopra i 10.00 € (considerate pull)
         perc_10 = (len(prezzi_oltre_10) / len(prezzi_pullabili)) * 100
-        print(f"🔄 [SET] {setId} - [%] {perc_10}")
+
+        ev_per_box = (ev / box_cost) if (box_cost and box_cost > 0) else None
+        print(f"🔄 [SET] {setId} - [EV] {ev:.2f} | [Box] {box_cost if box_cost is not None else 'n/a'}"
+            f"{' | [EV/Box] ' + f'{ev_per_box:.4f}' if ev_per_box is not None else ''}")
 
         # Assegnazione tier
-        tier = determina_tier(ev, icv, perc_10)
+        tier = determina_tier(ev, icv, perc_10, box_cost)
 
         tiers[tier].append({
             "name": s["name"],
