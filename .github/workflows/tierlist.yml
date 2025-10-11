@@ -1,0 +1,39 @@
+name: Run Tierlist
+
+on:
+  workflow_dispatch: # esecuzione manuale
+  schedule: # esecuzione giornaliera Europe/Rome (con DST)
+    - cron: "0 18 * * *" # quando è CEST (UTC+2) → 18:00 UTC = 20:00 IT
+
+jobs:
+  run-tierlist:
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Variabili richieste dallo script
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+
+      - name: Run Tierlist script
+        run: |
+          python src/tierlist/getTierlist.py
