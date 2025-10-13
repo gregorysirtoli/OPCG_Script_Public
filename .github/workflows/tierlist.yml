@@ -3,7 +3,7 @@ name: Run Tierlist
 on:
   workflow_dispatch: # esecuzione manuale
   schedule: # esecuzione giornaliera Europe/Rome (con DST)
-    - cron: "0 18 * * *" # quando è CEST (UTC+2) → 18:00 UTC = 20:00 IT
+    - cron: "0 12 * * *" # quando è CEST (UTC+2) → 12:00 UTC = 14:00 IT
 
 jobs:
   run-tierlist:
