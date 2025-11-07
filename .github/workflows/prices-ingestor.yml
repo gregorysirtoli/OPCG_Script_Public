@@ -3,7 +3,7 @@ name: Run Ingestor
 on:
   workflow_dispatch: # esecuzione manuale
   schedule: # esecuzione giornaliera alle 15:00 Europe/Rome (con DST)
-    - cron: "0 11 * * *" # quando è CEST (UTC+2) → 11:00 UTC = 13:00 IT
+    - cron: "0 13 * * *" # quando è CEST (UTC+2) → 13:00 UTC = 15:00 IT
 
 jobs:
   run-batches:
