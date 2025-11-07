@@ -237,8 +237,8 @@ if __name__ == "__main__":
         print(f"\n✅ [TIERLIST] GLOBAL")
         OP_IDS_EN = [
             "OP01", "OP02", "OP03", "OP04", "OP05", "OP06",
-            "OP07", "OP08", "OP09", "OP10", "OP11", "OP12",
-            "EB01", "EB02", "PRB01", "PRB02"
+            "OP07", "OP08", "OP09", "OP10", "OP11", "OP12", 
+            "OP13", "EB01", "EB02", "PRB01", "PRB02"
         ]
         tiers_en = build_tierlist(db, OP_IDS_EN, market= "en")
         db.Tierlist.delete_many({"language": "en"})
