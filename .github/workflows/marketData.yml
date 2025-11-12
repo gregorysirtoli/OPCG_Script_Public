@@ -1,0 +1,29 @@
+name: Run MarketData
+
+on:
+  workflow_dispatch: # esecuzione manuale
+  schedule:
+    # esecuzione giornaliera alle 19:00 Europe/Rome quando è CEST
+    - cron: "0 17 * * *" # CEST (UTC+2) → 17:00 UTC = 19:00 IT
+
+jobs:
+  update-market-data:
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: 1
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: python -m pip install -r requirements.txt
+
+      - name: Run MarketData enrichment
+        run: python -m src.ingest.marketData

@@ -1,0 +1,234 @@
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from pymongo.database import Database
+
+GRADING_FEES = 30
+
+def _to_number(v: Any) -> Optional[float]:
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, dict) and "$numberDecimal" in v:
+        try:
+            return float(v["$numberDecimal"])
+        except Exception:
+            return None
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+def _round2(n: Optional[float]) -> Optional[float]:
+    if n is None:
+        return None
+    if not isinstance(n, (int, float)):
+        return None
+    return float(f"{n:.2f}")
+
+def _calc_pct_change(now: Optional[float], base: Optional[float]) -> Optional[float]:
+    if now is None or base is None or base == 0:
+        return None
+    return _round2(((now - base) / base) * 100.0)
+
+def _best_usd(doc: Dict[str, Any]) -> Optional[float]:
+    # All prices in USD. If no pricePrimary, use priority fallback.
+    for k in ("cmPriceTrend", "priceUngraded", "pricePriceCharting",
+              "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "cmPriceLow"):
+        v = _to_number(doc.get(k))
+        if v is not None:
+            return v
+    return None
+
+@dataclass
+class SeriesInfo:
+    price_now_usd: Optional[float] # USD
+    used_primary: bool # true if pricePrimary
+
+@dataclass
+class Baselines:
+    b1: Optional[float]
+    b7: Optional[float]
+    b30: Optional[float]
+
+def _get_closest_at_or_before(prices: List[Dict[str, Any]], target_dt: datetime) -> Optional[Dict[str, Any]]:
+    # prices ordered by createdAt desc
+    for p in prices:
+        cad = p.get("createdAt")
+        if isinstance(cad, dict) and "$date" in cad:
+            try:
+                cad = datetime.fromisoformat(cad["$date"].replace("Z", "+00:00"))
+            except Exception:
+                cad = None
+        if isinstance(cad, datetime) and cad <= target_dt:
+            return p
+    return None
+
+def _pick_series_now(latest: Optional[Dict[str, Any]]) -> SeriesInfo:
+    # If pricePrimary then "now" otherwise best_usd() (fallback)
+    p_primary = _to_number((latest or {}).get("pricePrimary"))
+    if p_primary is not None:
+        return SeriesInfo(price_now_usd=p_primary, used_primary=True)
+    p_fallback = _best_usd(latest or {})
+    return SeriesInfo(price_now_usd=p_fallback, used_primary=False)
+
+def _pick_baselines(used_primary: bool,
+                    b1doc: Optional[Dict[str, Any]],
+                    b7doc: Optional[Dict[str, Any]],
+                    b30doc: Optional[Dict[str, Any]]) -> Baselines:
+    if used_primary:
+        return Baselines(
+            b1=_to_number((b1doc or {}).get("pricePrimary")),
+            b7=_to_number((b7doc or {}).get("pricePrimary")),
+            b30=_to_number((b30doc or {}).get("pricePrimary")),
+        )
+    else:
+        # pricePrimary otherwise best_usd() (fallback)
+        return Baselines(
+            b1=_best_usd(b1doc or {}),
+            b7=_best_usd(b7doc or {}),
+            b30=_best_usd(b30doc or {}),
+        )
+
+def _as_number_or_none(v: Any) -> Optional[float]:
+    n = _to_number(v)
+    return _round2(n) if n is not None else None
+
+def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dict[str, Any]) -> Dict[str, Any]:
+    latest = prices[0] if prices else None
+
+    # Current series (USD)
+    s = _pick_series_now(latest)
+
+    # Baselines (USD)
+    now = datetime.now(timezone.utc)
+    b1doc = _get_closest_at_or_before(prices, now - timedelta(days=1))
+    b7doc = _get_closest_at_or_before(prices, now - timedelta(days=7))
+    b30doc = _get_closest_at_or_before(prices, now - timedelta(days=30))
+    baselines = _pick_baselines(s.used_primary, b1doc, b7doc, b30doc)
+
+    # Delta prices (USD)
+    def _delta(now_: Optional[float], base_: Optional[float]) -> Optional[float]:
+        if now_ is None or base_ is None:
+            return None
+        return _round2(now_ - base_)
+
+    price_change_1d = _delta(s.price_now_usd, baselines.b1)
+    price_change_7d = _delta(s.price_now_usd, baselines.b7)
+    price_change_30d = _delta(s.price_now_usd, baselines.b30)
+
+    # Delta percent (USD)
+    pct1 = _calc_pct_change(s.price_now_usd, baselines.b1)
+    pct7 = _calc_pct_change(s.price_now_usd, baselines.b7)
+    pct30 = _calc_pct_change(s.price_now_usd, baselines.b30)
+
+    # sellers & listings from doc (latest)
+    sellers = latest.get("sellers") if latest else None
+    listings = latest.get("listings") if latest else None
+
+    # priceSecondary USD
+    price_secondary = None
+    for key in ("cmPriceTrend", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "cmPriceLow"):
+        v = _to_number((latest or {}).get(key))
+        if v is not None:
+            price_secondary = v
+            break
+
+    # graded (USD)
+    psa10_usd = _to_number(graded_first.get("psa10"))
+    bsg10_usd = _to_number(graded_first.get("bsg10"))  # error: from "bsg10" to "bgs10", i'm tard!
+
+    # gradingProfit percent (%)
+    if s.price_now_usd:
+        effective_cost = s.price_now_usd + (GRADING_FEES or 0.0)
+        if effective_cost > 0:
+            gp_psa10 = _round2(((psa10_usd - effective_cost) / effective_cost) * 100) if psa10_usd is not None else None
+            gp_bsg10 = _round2(((bsg10_usd - effective_cost) / effective_cost) * 100) if bsg10_usd is not None else None
+        else:
+            gp_psa10 = None
+            gp_bsg10 = None
+    else:
+        gp_psa10 = None
+        gp_bsg10 = None
+
+    return {
+        "createdAt": datetime.now(timezone.utc),
+        # ---- output marketData (USD) ----
+        "sellers": sellers if sellers is not None else None,
+        "listings": listings if listings is not None else None,
+        "price": _as_number_or_none(s.price_now_usd), # USD
+        "pricePrimary": _as_number_or_none((latest or {}).get("pricePrimary")), # USD
+        "priceSecondary": _as_number_or_none(price_secondary), # USD
+
+        "psa10": _as_number_or_none(psa10_usd), # USD
+        "bgs10": _as_number_or_none(bsg10_usd), # USD
+
+        "gradingProfitPsa10": gp_psa10, # %
+        "gradingProfitBsg10": gp_bsg10, # %
+ 
+        "priceChange1d": price_change_1d, # USD
+        "priceChange7d": price_change_7d, # USD
+        "priceChange30d": price_change_30d, # USD
+
+        "percentageChange1d": pct1, # %
+        "percentageChange7d": pct7, # %
+        "percentageChange30d": pct30, # %
+    }
+
+def update_cards_market_data(db: Database, days_back: int = 45, limit_ids: Optional[List[str]] = None) -> Tuple[int, int]:
+    coll_cards = db["Cards"]
+    coll_prices = db["Prices"]
+
+    q_cards: Dict[str, Any] = {}
+    if limit_ids:
+        q_cards["id"] = {"$in": limit_ids}
+
+    ids = [c["id"] for c in coll_cards.find(q_cards, {"id": 1}) if "id" in c]
+    if not ids:
+        return (0, 0)
+
+    since = datetime.now(timezone.utc) - timedelta(days=days_back)
+
+    cur = coll_prices.find(
+        {"itemId": {"$in": ids}, "createdAt": {"$gte": since}},
+        {
+            "itemId": 1, "createdAt": 1,
+            "pricePrimary": 1,
+            "cmPriceTrend": 1, "cmAvg30d": 1, "cmAvg7d": 1, "cmAvg1d": 1, "cmPriceAvg": 1, "cmPriceLow": 1,
+            "priceUngraded": 1, "pricePriceCharting": 1,
+            "listings": 1, "sellers": 1,
+            "psa10": 1, "bsg10": 1,
+        }
+    ).sort([("itemId", 1), ("createdAt", -1)])
+
+    per_item: Dict[str, List[Dict[str, Any]]] = {}
+    for p in cur:
+        per_item.setdefault(p["itemId"], []).append(p)
+
+    # graded first (psa10/bsg10) - $first on createdAt desc
+    graded_first: Dict[str, Dict[str, Any]] = {}
+    cur2 = coll_prices.aggregate([
+        {"$match": {"itemId": {"$in": ids}, "$or": [{"psa10": {"$type": "number"}}, {"bsg10": {"$type": "number"}}]}},
+        {"$sort": {"itemId": 1, "createdAt": -1}},
+        {"$group": {"_id": "$itemId", "psa10": {"$first": "$psa10"}, "bsg10": {"$first": "$bsg10"}}}
+    ])
+    for g in cur2:
+        graded_first[g["_id"]] = {"psa10": g.get("psa10"), "bsg10": g.get("bsg10")}
+
+    from pymongo import UpdateOne
+    ops: List[UpdateOne] = []
+    touched = 0
+    updated = 0
+    now = datetime.now(timezone.utc)
+    for cid in ids:
+        prices = per_item.get(cid, [])
+        md = compute_market_data_for_item(prices, graded_first.get(cid, {}))
+        touched += 1
+        if any(v is not None for v in md.values()):
+            ops.append(UpdateOne({"id": cid}, {"$set": {"marketData": md, "updatedAt": now}}))
+    if ops:
+        res = coll_cards.bulk_write(ops, ordered=False)
+        updated = (res.modified_count or 0) + (res.upserted_count or 0)
+    return (touched, updated)
