@@ -138,13 +138,21 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
 
     # Baselines (USD)
     now = datetime.now(timezone.utc)
-    b1doc = _get_closest_around(prices, now - timedelta(days=1))
-    b7doc = _get_closest_around(prices, now - timedelta(days=7))
-    b30doc = _get_closest_around(prices, now - timedelta(days=30))
-    b90doc = _get_closest_around(prices, now - timedelta(days=90))
-    b180doc = _get_closest_around(prices, now - timedelta(days=180))
-    b365doc = _get_closest_around(prices, now - timedelta(days=365))
+    b1doc = _get_closest_around(prices, now - timedelta(days=1), max_days=2)
+    b7doc = _get_closest_around(prices, now - timedelta(days=7), max_days=3.5)
+    b30doc = _get_closest_around(prices, now - timedelta(days=30), max_days=7)
+    b90doc = _get_closest_around(prices, now - timedelta(days=90), max_days=14)
+    b180doc = _get_closest_around(prices, now - timedelta(days=180), max_days=21)
+    b365doc = _get_closest_around(prices, now - timedelta(days=365), max_days=30)
     baselines = _pick_baselines(s.used_primary, b1doc, b7doc, b30doc,  b90doc, b180doc, b365doc)
+
+    # Prices reference
+    price_1d   = _as_number_or_none(baselines.b1)
+    price_7d   = _as_number_or_none(baselines.b7)
+    price_30d  = _as_number_or_none(baselines.b30)
+    price_90d  = _as_number_or_none(baselines.b90)
+    price_180d = _as_number_or_none(baselines.b180)
+    price_365d = _as_number_or_none(baselines.b365)
 
     # Delta prices (USD)
     def _delta(now_: Optional[float], base_: Optional[float]) -> Optional[float]:
@@ -179,6 +187,16 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
             price_secondary = v
             break
 
+    # Spread between cmPriceTrend and cmPriceLow
+    cm_trend = _to_number((latest or {}).get("cmPriceTrend"))
+    cm_low   = _to_number((latest or {}).get("cmPriceLow"))
+
+    if cm_trend is not None and cm_trend > 0 and cm_low is not None:
+        # quanto il low è "scontato" rispetto al trend, in %
+        low_vs_trend_discount_pct = _round2(((cm_trend - cm_low) / cm_trend) * 100.0)
+    else:
+        low_vs_trend_discount_pct = None
+
     # graded (USD)
     psa10_usd = _to_number(graded_first.get("psa10"))
     bsg10_usd = _to_number(graded_first.get("bsg10"))  # error: from "bsg10" to "bgs10", i'm tard!
@@ -210,6 +228,14 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
 
         "gradingProfitPsa10": gp_psa10, # %
         "gradingProfitBsg10": gp_bsg10, # %
+
+        # reference prices (baseline)
+        "price1d": price_1d,
+        "price7d": price_7d,
+        "price30d": price_30d,
+        "price90d": price_90d,
+        "price180d": price_180d,
+        "price365d": price_365d,
  
         "priceChange1d": price_change_1d, # USD
         "priceChange7d": price_change_7d, # USD
@@ -224,6 +250,9 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
         "percentageChange90d": pct90, # %
         "percentageChange180d": pct180, # %
         "percentageChange365d": pct365, # %
+
+        # spread low vs trend
+        "spread": low_vs_trend_discount_pct, # %
     }
 
 def update_cards_market_data(db: Database, days_back: int = 400, limit_ids: Optional[List[str]] = None) -> Tuple[int, int]:
