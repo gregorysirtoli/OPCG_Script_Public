@@ -253,7 +253,7 @@ if __name__ == "__main__":
         OP_IDS_JP = [
             "OP01JP", "OP02JP", "OP03JP", "OP04JP", "OP05JP", "OP06JP",
             "OP07JP", "OP08JP", "OP09JP", "OP10JP", "OP11JP", "OP12JP",
-            "OP13JP", "EB01JP", "EB02JP", "PRB01JP", "PRB02JP"
+            "OP13JP", "EB01JP", "EB02JP", "PRB01JP", "PRB02JP", "EB03JP"
         ]
         tiers_jp = build_tierlist(db, OP_IDS_JP, market= "jp")
         db.Tierlist.delete_many({"language": "jp"})
