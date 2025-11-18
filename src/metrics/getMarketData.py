@@ -223,6 +223,9 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
         "pricePrimary": _as_number_or_none((latest or {}).get("pricePrimary")), # USD
         "priceSecondary": _as_number_or_none(price_secondary), # USD
 
+        "priceTrend": _as_number_or_none(cm_trend), # USD
+        "priceLow": _as_number_or_none(cm_low), # USD
+
         "psa10": _as_number_or_none(psa10_usd), # USD
         "bgs10": _as_number_or_none(bsg10_usd), # USD
 
