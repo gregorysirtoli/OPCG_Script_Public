@@ -34,6 +34,9 @@ def _calc_pct_change(now: Optional[float], base: Optional[float]) -> Optional[fl
     return _round2(((now - base) / base) * 100.0)
 
 def _best_usd(doc: Dict[str, Any]) -> Optional[float]:
+    if not doc:  # None or {}
+        return None
+     
     # All prices in USD. If no pricePrimary, use priority fallback.
     for k in ("cmPriceTrend", "priceUngraded", "pricePriceCharting",
               "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "cmPriceLow"):
@@ -52,19 +55,33 @@ class Baselines:
     b1: Optional[float]
     b7: Optional[float]
     b30: Optional[float]
+    b90: Optional[float]
+    b180: Optional[float]
+    b365: Optional[float]
 
-def _get_closest_at_or_before(prices: List[Dict[str, Any]], target_dt: datetime) -> Optional[Dict[str, Any]]:
-    # prices ordered by createdAt desc
+def _get_closest_around(
+    prices: List[Dict[str, Any]],
+    target_dt: datetime,
+    max_days: Optional[float] = None, # es. 3, 7, 30, ecc.
+) -> Optional[Dict[str, Any]]:
+    closest_doc = None
+    closest_diff_days = None
+
     for p in prices:
-        cad = p.get("createdAt")
-        if isinstance(cad, dict) and "$date" in cad:
-            try:
-                cad = datetime.fromisoformat(cad["$date"].replace("Z", "+00:00"))
-            except Exception:
-                cad = None
-        if isinstance(cad, datetime) and cad <= target_dt:
-            return p
-    return None
+        cad = _parse_created_at(p)
+        if cad is None:
+            continue
+
+        diff_days = abs((cad - target_dt).total_seconds()) / 86400.0
+
+        if max_days is not None and diff_days > max_days:
+            continue
+
+        if closest_diff_days is None or diff_days < closest_diff_days:
+            closest_doc = p
+            closest_diff_days = diff_days
+
+    return closest_doc
 
 def _pick_series_now(latest: Optional[Dict[str, Any]]) -> SeriesInfo:
     # If pricePrimary then "now" otherwise best_usd() (fallback)
@@ -74,23 +91,40 @@ def _pick_series_now(latest: Optional[Dict[str, Any]]) -> SeriesInfo:
     p_fallback = _best_usd(latest or {})
     return SeriesInfo(price_now_usd=p_fallback, used_primary=False)
 
-def _pick_baselines(used_primary: bool,
-                    b1doc: Optional[Dict[str, Any]],
-                    b7doc: Optional[Dict[str, Any]],
-                    b30doc: Optional[Dict[str, Any]]) -> Baselines:
+def _pick_baselines(
+    used_primary: bool,
+    b1doc: Optional[Dict[str, Any]],
+    b7doc: Optional[Dict[str, Any]],
+    b30doc: Optional[Dict[str, Any]],
+    b90doc: Optional[Dict[str, Any]],
+    b180doc: Optional[Dict[str, Any]],
+    b365doc: Optional[Dict[str, Any]],
+) -> Baselines:
     if used_primary:
-        return Baselines(
-            b1=_to_number((b1doc or {}).get("pricePrimary")),
-            b7=_to_number((b7doc or {}).get("pricePrimary")),
-            b30=_to_number((b30doc or {}).get("pricePrimary")),
-        )
+        getter = lambda d: _to_number((d or {}).get("pricePrimary"))
     else:
-        # pricePrimary otherwise best_usd() (fallback)
-        return Baselines(
-            b1=_best_usd(b1doc or {}),
-            b7=_best_usd(b7doc or {}),
-            b30=_best_usd(b30doc or {}),
-        )
+        getter = lambda d: _best_usd(d or {})
+
+    return Baselines(
+        b1=getter(b1doc),
+        b7=getter(b7doc),
+        b30=getter(b30doc),
+        b90=getter(b90doc),
+        b180=getter(b180doc),
+        b365=getter(b365doc),
+    )
+
+def _parse_created_at(doc: Dict[str, Any]) -> Optional[datetime]:
+    cad = doc.get("createdAt")
+    if isinstance(cad, dict) and "$date" in cad:
+        try:
+            # gestisce ISO + Z
+            return datetime.fromisoformat(cad["$date"].replace("Z", "+00:00"))
+        except Exception:
+            return None
+    if isinstance(cad, datetime):
+        return cad
+    return None
 
 def _as_number_or_none(v: Any) -> Optional[float]:
     n = _to_number(v)
@@ -104,10 +138,13 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
 
     # Baselines (USD)
     now = datetime.now(timezone.utc)
-    b1doc = _get_closest_at_or_before(prices, now - timedelta(days=1))
-    b7doc = _get_closest_at_or_before(prices, now - timedelta(days=7))
-    b30doc = _get_closest_at_or_before(prices, now - timedelta(days=30))
-    baselines = _pick_baselines(s.used_primary, b1doc, b7doc, b30doc)
+    b1doc = _get_closest_around(prices, now - timedelta(days=1))
+    b7doc = _get_closest_around(prices, now - timedelta(days=7))
+    b30doc = _get_closest_around(prices, now - timedelta(days=30))
+    b90doc = _get_closest_around(prices, now - timedelta(days=90))
+    b180doc = _get_closest_around(prices, now - timedelta(days=180))
+    b365doc = _get_closest_around(prices, now - timedelta(days=365))
+    baselines = _pick_baselines(s.used_primary, b1doc, b7doc, b30doc,  b90doc, b180doc, b365doc)
 
     # Delta prices (USD)
     def _delta(now_: Optional[float], base_: Optional[float]) -> Optional[float]:
@@ -115,14 +152,20 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
             return None
         return _round2(now_ - base_)
 
-    price_change_1d = _delta(s.price_now_usd, baselines.b1)
-    price_change_7d = _delta(s.price_now_usd, baselines.b7)
-    price_change_30d = _delta(s.price_now_usd, baselines.b30)
+    price_change_1d   = _delta(s.price_now_usd, baselines.b1)
+    price_change_7d   = _delta(s.price_now_usd, baselines.b7)
+    price_change_30d  = _delta(s.price_now_usd, baselines.b30)
+    price_change_90d  = _delta(s.price_now_usd, baselines.b90)
+    price_change_180d = _delta(s.price_now_usd, baselines.b180)
+    price_change_365d = _delta(s.price_now_usd, baselines.b365)
 
     # Delta percent (USD)
-    pct1 = _calc_pct_change(s.price_now_usd, baselines.b1)
-    pct7 = _calc_pct_change(s.price_now_usd, baselines.b7)
-    pct30 = _calc_pct_change(s.price_now_usd, baselines.b30)
+    pct1   = _calc_pct_change(s.price_now_usd, baselines.b1)
+    pct7   = _calc_pct_change(s.price_now_usd, baselines.b7)
+    pct30  = _calc_pct_change(s.price_now_usd, baselines.b30)
+    pct90  = _calc_pct_change(s.price_now_usd, baselines.b90)
+    pct180 = _calc_pct_change(s.price_now_usd, baselines.b180)
+    pct365 = _calc_pct_change(s.price_now_usd, baselines.b365)
 
     # sellers & listings from doc (latest)
     sellers = latest.get("sellers") if latest else None
@@ -171,13 +214,19 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
         "priceChange1d": price_change_1d, # USD
         "priceChange7d": price_change_7d, # USD
         "priceChange30d": price_change_30d, # USD
+        "priceChange90d": price_change_90d, # USD
+        "priceChange180d": price_change_180d, # USD
+        "priceChange365d": price_change_365d, # USD
 
         "percentageChange1d": pct1, # %
         "percentageChange7d": pct7, # %
         "percentageChange30d": pct30, # %
+        "percentageChange90d": pct90, # %
+        "percentageChange180d": pct180, # %
+        "percentageChange365d": pct365, # %
     }
 
-def update_cards_market_data(db: Database, days_back: int = 45, limit_ids: Optional[List[str]] = None) -> Tuple[int, int]:
+def update_cards_market_data(db: Database, days_back: int = 400, limit_ids: Optional[List[str]] = None) -> Tuple[int, int]:
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
 
