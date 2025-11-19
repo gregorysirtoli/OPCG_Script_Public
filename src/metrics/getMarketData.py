@@ -138,12 +138,12 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
 
     # Baselines (USD)
     now = datetime.now(timezone.utc)
-    b1doc = _get_closest_around(prices, now - timedelta(days=1), max_days=2)
+    b1doc = _get_closest_around(prices, now - timedelta(days=1), max_days=1.75)
     b7doc = _get_closest_around(prices, now - timedelta(days=7), max_days=3.5)
     b30doc = _get_closest_around(prices, now - timedelta(days=30), max_days=7)
     b90doc = _get_closest_around(prices, now - timedelta(days=90), max_days=14)
-    b180doc = _get_closest_around(prices, now - timedelta(days=180), max_days=21)
-    b365doc = _get_closest_around(prices, now - timedelta(days=365), max_days=30)
+    b180doc = _get_closest_around(prices, now - timedelta(days=180), max_days=56)
+    b365doc = _get_closest_around(prices, now - timedelta(days=365), max_days=112)
     baselines = _pick_baselines(s.used_primary, b1doc, b7doc, b30doc,  b90doc, b180doc, b365doc)
 
     # Prices reference
@@ -216,7 +216,7 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
 
     return {
         "createdAt": datetime.now(timezone.utc),
-        # ---- output marketData (USD) ----
+        # marketData
         "sellers": sellers if sellers is not None else None,
         "listings": listings if listings is not None else None,
         "price": _as_number_or_none(s.price_now_usd), # USD
@@ -283,6 +283,9 @@ def update_cards_market_data(db: Database, days_back: int = 400, limit_ids: Opti
             "psa10": 1, "bsg10": 1,
         }
     ).sort([("itemId", 1), ("createdAt", -1)])
+
+
+    print(cur)
 
     per_item: Dict[str, List[Dict[str, Any]]] = {}
     for p in cur:
