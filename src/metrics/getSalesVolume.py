@@ -156,9 +156,10 @@ def compute_daily_sales_volume(db, day_rome: datetime) -> Dict[str, Any]:
     # 7) Scale and return
     units_scaled = int(round(total_units * SALES_SCALING_FACTOR))
     volume_scaled = round(total_usd * SALES_SCALING_FACTOR, 2)
+    listings_scaled = int(round(cards_with_listings * SALES_SCALING_FACTOR))
     date_dt = day_end_utc
 
-    return {"date": date_dt, "units": units_scaled, "volume": volume_scaled, "listings": int(cards_with_listings), "createdAt": datetime.now(timezone.utc),}
+    return {"date": date_dt, "units": units_scaled, "volume": volume_scaled, "listings": listings_scaled, "createdAt": datetime.now(timezone.utc),}
 
 
 def upsert_sales_volume(db, day_rome: datetime, data: Dict[str, Any]) -> None:
