@@ -107,10 +107,21 @@ def compute_daily_sales_volume(db, day_rome: datetime) -> Dict[str, Any]:
     cursor = coll_prices.find(
         {
             "itemId": {"$in": item_ids},
-            "createdAt": {"$gte": earliest_needed_utc, "$lte": day_end_utc},
+            "createdAt": {
+                "$gte": earliest_needed_utc,
+                "$lte": day_end_utc,
+            },
         },
-        {"itemId": 1, "createdAt": 1, "pricePrimary": 1, "cmPriceTrend": 1, "listings": 1, "totalListings": 1},
-    ).sort([("itemId", ASCENDING), ("createdAt", -1)])
+        {
+            "_id": 0,
+            "itemId": 1,
+            "createdAt": 1,
+            "pricePrimary": 1,
+            "cmPriceTrend": 1,
+            "listings": 1,
+            "totalListings": 1,
+        },
+    )
 
     # 5) Group per itemId
     groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -118,6 +129,13 @@ def compute_daily_sales_volume(db, day_rome: datetime) -> Dict[str, Any]:
         iid = s.get("itemId")
         if isinstance(iid, str):
             groups.setdefault(iid, []).append(s)
+
+    # 5.1) Order by createdAt DESC
+    for snaps in groups.values():
+        snaps.sort(
+            key=lambda doc: doc.get("createdAt") or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
 
     # 6) Accumulate
     total_units = 0
@@ -161,14 +179,13 @@ def compute_daily_sales_volume(db, day_rome: datetime) -> Dict[str, Any]:
 
     return {"date": date_dt, "units": units_scaled, "volume": volume_scaled, "listings": listings_scaled, "createdAt": datetime.now(timezone.utc),}
 
-
 def upsert_sales_volume(db, day_rome: datetime, data: Dict[str, Any]) -> None:
     coll_sv: Collection = db["SalesVolume"]
-    try:
-        coll_sv.create_index([("date", ASCENDING)], unique=True)
-    except Exception:
-        pass
-    coll_sv.update_one({"date": data["date"]}, {"$set": data}, upsert=True)
+
+    # Check for existing and delete
+    coll_sv.delete_many({"date": data["date"]})
+    # Insert new
+    coll_sv.insert_one(data)
 
 
 def main() -> int:
