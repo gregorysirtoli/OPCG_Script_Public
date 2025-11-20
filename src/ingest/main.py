@@ -185,7 +185,7 @@ def main() -> int:
                 row: Dict[str, Any] = {
                     "createdAt": now_rome(),
                     "itemId": item_id,
-                    "currency": "USD",
+                    #"currency": "USD",
                     "weekNumber": dt_now.isocalendar().week, 
                 }
 
