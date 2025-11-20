@@ -275,15 +275,23 @@ def update_cards_market_data(db: Database, days_back: int = 400, limit_ids: Opti
     cur = coll_prices.find(
         {"itemId": {"$in": ids}, "createdAt": {"$gte": since}},
         {
-            "itemId": 1, "createdAt": 1,
+            "itemId": 1,
+            "createdAt": 1,
             "pricePrimary": 1,
-            "cmPriceTrend": 1, "cmAvg30d": 1, "cmAvg7d": 1, "cmAvg1d": 1, "cmPriceAvg": 1, "cmPriceLow": 1,
-            "priceUngraded": 1, "pricePriceCharting": 1,
-            "listings": 1, "sellers": 1,
-            "psa10": 1, "bsg10": 1,
-        }
-    ).sort([("itemId", 1), ("createdAt", -1)])
-
+            "cmPriceTrend": 1,
+            "cmAvg30d": 1,
+            "cmAvg7d": 1,
+            "cmAvg1d": 1,
+            "cmPriceAvg": 1,
+            "cmPriceLow": 1,
+            "priceUngraded": 1,
+            "pricePriceCharting": 1,
+            "listings": 1,
+            "sellers": 1,
+            "psa10": 1,
+            "bsg10": 1,
+        },
+    )
 
     print(cur)
 
@@ -291,15 +299,41 @@ def update_cards_market_data(db: Database, days_back: int = 400, limit_ids: Opti
     for p in cur:
         per_item.setdefault(p["itemId"], []).append(p)
 
+    # order by createdAt DESC
+    for snaps in per_item.values():
+        snaps.sort(
+            key=lambda doc: doc.get("createdAt") or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+
     # graded first (psa10/bsg10) - $first on createdAt desc
     graded_first: Dict[str, Dict[str, Any]] = {}
-    cur2 = coll_prices.aggregate([
-        {"$match": {"itemId": {"$in": ids}, "$or": [{"psa10": {"$type": "number"}}, {"bsg10": {"$type": "number"}}]}},
-        {"$sort": {"itemId": 1, "createdAt": -1}},
-        {"$group": {"_id": "$itemId", "psa10": {"$first": "$psa10"}, "bsg10": {"$first": "$bsg10"}}}
-    ])
-    for g in cur2:
-        graded_first[g["_id"]] = {"psa10": g.get("psa10"), "bsg10": g.get("bsg10")}
+
+    for cid, snaps in per_item.items():
+        best_doc = None
+        best_ts = None
+
+        for d in snaps:
+            # check graded prices
+            has_psa = isinstance(d.get("psa10"), (int, float))
+            has_bsg = isinstance(d.get("bsg10"), (int, float))
+
+            if not (has_psa or has_bsg):
+                continue
+
+            cad = d.get("createdAt")
+            if not isinstance(cad, datetime):
+                continue
+
+            if best_ts is None or cad > best_ts:
+                best_ts = cad
+                best_doc = d
+
+        if best_doc:
+            graded_first[cid] = {
+                "psa10": best_doc.get("psa10"),
+                "bsg10": best_doc.get("bsg10"),
+            }
 
     from pymongo import UpdateOne
     ops: List[UpdateOne] = []
