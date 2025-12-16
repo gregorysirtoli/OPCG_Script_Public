@@ -84,11 +84,20 @@ def _get_closest_around(
     return closest_doc
 
 def _pick_series_now(latest: Optional[Dict[str, Any]]) -> SeriesInfo:
-    # If pricePrimary then "now" otherwise best_usd() (fallback)
-    p_primary = _to_number((latest or {}).get("pricePrimary"))
+    doc = latest or {}
+
+    # 1) prefer cmPriceTrend
+    trend = _to_number(doc.get("cmPriceTrend"))
+    if trend is not None:
+        return SeriesInfo(price_now_usd=trend, used_primary=True)
+
+    # 2) fallback pricePrimary
+    p_primary = _to_number(doc.get("pricePrimary"))
     if p_primary is not None:
         return SeriesInfo(price_now_usd=p_primary, used_primary=True)
-    p_fallback = _best_usd(latest or {})
+
+    # 3) fallback cascade
+    p_fallback = _best_usd(doc)
     return SeriesInfo(price_now_usd=p_fallback, used_primary=False)
 
 def _pick_baselines(
@@ -101,7 +110,12 @@ def _pick_baselines(
     b365doc: Optional[Dict[str, Any]],
 ) -> Baselines:
     if used_primary:
-        getter = lambda d: _to_number((d or {}).get("pricePrimary"))
+        def getter(d: Optional[Dict[str, Any]]) -> Optional[float]:
+            dd = d or {}
+            v = _to_number(dd.get("cmPriceTrend"))
+            if v is not None:
+                return v
+            return _to_number(dd.get("pricePrimary"))
     else:
         getter = lambda d: _best_usd(d or {})
 
