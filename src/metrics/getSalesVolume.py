@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from pymongo import MongoClient, ASCENDING
 from pymongo.collection import Collection
+from src.core.emailer import send_email
 
 # Carica variabili da ambiente (.env o .env.local)
 load_dotenv(".env.local")
@@ -220,7 +221,9 @@ def main() -> int:
     data = compute_daily_sales_volume(db, yesterday_rome)
     upsert_sales_volume(db, yesterday_rome, data)
 
-    print(f"[SalesVolume] Upserted {data}")
+    summary = f"[SalesVolume] Upserted {data}"
+    print(f"{summary}")
+    send_email(os.getenv("MAIL_SUBJECT", "[PRICE] Report"), summary)
     return 0
 
 

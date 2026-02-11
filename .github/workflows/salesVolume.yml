@@ -3,10 +3,10 @@ name: Run Sales Volume
 on:
   workflow_dispatch: # esecuzione manuale
   schedule: # esecuzione giornaliera Europe/Rome (con DST)
-    - cron: "0 22 * * *" # quando è CEST (UTC+2) → 22:00 UTC = 24:00 (IT)
+    - cron: "10 23 * * *"
 
 jobs:
-  run-tierlist:
+  run-sales-volume:
     runs-on: ubuntu-24.04
 
     env:
@@ -14,9 +14,11 @@ jobs:
       # Variabili richieste dallo script
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
       MONGODB_DB: ${{ secrets.MONGODB_DB }}
-      #EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
-      #EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-      #EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      MAIL_SUBJECT: "[WORKFLOW] Sales Volume Report"
 
     steps:
       - name: Checkout repo
@@ -36,4 +38,4 @@ jobs:
 
       - name: Run Sales Volume script
         run: |
-          python src/metrics/getSalesVolume.py
+          python -m src.metrics.getSalesVolume
