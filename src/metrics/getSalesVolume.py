@@ -141,10 +141,18 @@ def compute_daily_sales_volume(db, day_rome: datetime) -> Dict[str, Any]:
     total_units = 0
     total_usd = 0.0
     cards_with_listings = 0
+    total_price_sum_usd = 0.0
+    cards_with_price = 0
 
     for iid, snaps in groups.items():
         snap_today = _get_closest_at_or_before(snaps, day_end_utc)
         snap_prev = _get_closest_at_or_before(snaps, prev_end_utc)
+
+        # Sum of prices for the day (one price per card, closest snapshot at or before day_end)
+        p_day = _effective_usd(snap_today)
+        if isinstance(p_day, (int, float)) and float(p_day) > 0:
+            total_price_sum_usd += float(p_day)
+            cards_with_price += 1
 
         l_today = _get_listings(snap_today)
         l_prev = _get_listings(snap_prev)
@@ -177,7 +185,17 @@ def compute_daily_sales_volume(db, day_rome: datetime) -> Dict[str, Any]:
     listings_scaled = int(round(cards_with_listings * SALES_SCALING_FACTOR))
     date_dt = day_end_utc
 
-    return {"date": date_dt, "units": units_scaled, "volume": volume_scaled, "listings": listings_scaled, "createdAt": datetime.now(timezone.utc),}
+    prices_sum = round(total_price_sum_usd, 2)
+
+    return {
+        "date": date_dt,
+        "units": units_scaled,
+        "volume": volume_scaled,
+        "listings": listings_scaled,
+        "totalItemValue": prices_sum,
+        "totalItem": cards_with_price,
+        "createdAt": datetime.now(timezone.utc),
+    }
 
 def upsert_sales_volume(db, day_rome: datetime, data: Dict[str, Any]) -> None:
     coll_sv: Collection = db["SalesVolume"]
