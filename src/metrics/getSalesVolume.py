@@ -14,9 +14,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
-from pymongo import MongoClient, ASCENDING
+from pymongo import MongoClient
 from pymongo.collection import Collection
 from src.core.emailer import send_email
+import traceback
 
 # Carica variabili da ambiente (.env o .env.local)
 load_dotenv(".env.local")
@@ -208,24 +209,30 @@ def upsert_sales_volume(db, day_rome: datetime, data: Dict[str, Any]) -> None:
 
 
 def main() -> int:
-    MONGO_URI = os.environ["MONGODB_URI"]
-    MONGODB_DB = os.environ["MONGODB_DB"]
+    try:
+        MONGO_URI = os.environ["MONGODB_URI"]
+        MONGODB_DB = os.environ["MONGODB_DB"]
 
-    client = MongoClient(MONGO_URI)
-    db = client[MONGODB_DB]
+        client = MongoClient(MONGO_URI)
+        db = client[MONGODB_DB]
 
-    # just-finished day in Europe/Rome
-    now_rome = datetime.now(EUROPE_ROME)
-    yesterday_rome = (now_rome - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        # just-finished day in Europe/Rome
+        now_rome = datetime.now(EUROPE_ROME)
+        yesterday_rome = (now_rome - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
 
-    data = compute_daily_sales_volume(db, yesterday_rome)
-    upsert_sales_volume(db, yesterday_rome, data)
+        data = compute_daily_sales_volume(db, yesterday_rome)
+        upsert_sales_volume(db, yesterday_rome, data)
 
-    summary = f"[SalesVolume] Upserted {data}"
-    print(f"{summary}")
-    send_email(os.getenv("MAIL_SUBJECT", "[PRICE] Report"), summary)
-    return 0
+        summary = f"[SalesVolume] Upserted {data}"
+        print(f"{summary}")
+        
+        send_email("✅ [WORKFLOW] Sales Volume Report", summary)
+        return 0
 
+    except Exception:
+        send_email("🚫 [WORKFLOW] Sales Volume Report", traceback.format_exc())
+        raise
 
 if __name__ == "__main__":
+
     raise SystemExit(main())

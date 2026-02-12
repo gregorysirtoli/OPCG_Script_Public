@@ -18,7 +18,6 @@ jobs:
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
-      MAIL_SUBJECT: "[WORKFLOW] Sales Volume Report"
 
     steps:
       - name: Checkout repo
