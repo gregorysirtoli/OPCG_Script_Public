@@ -17,6 +17,7 @@ jobs:
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
     steps:
       - name: Checkout repo
@@ -36,4 +37,4 @@ jobs:
 
       - name: Run Tierlist script
         run: |
-          python src/tierlist/getTierlist.py
+          python -m src.tierlist.getTierlist

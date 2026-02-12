@@ -2,14 +2,10 @@ from datetime import datetime, timezone
 from pymongo import MongoClient
 import statistics
 from dotenv import load_dotenv
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
 import os
 import traceback
-import csv
 from typing import Optional, Dict, List, Any, Tuple
+from src.core.emailer import send_email
 
 # ============================================================
 # ENV
@@ -17,55 +13,13 @@ from typing import Optional, Dict, List, Any, Tuple
 load_dotenv(".env.local")
 load_dotenv()
 
-REQUIRED = ["MONGODB_URI", "MONGODB_DB", "EMAIL_ADDRESS", "EMAIL_PASSWORD", "EMAIL_TO"]
+REQUIRED = ["MONGODB_URI", "MONGODB_DB"]
 missing = [k for k in REQUIRED if not os.getenv(k)]
 if missing:
     raise RuntimeError(f"Missing env vars: {', '.join(missing)}")
 
 MONGO_URI = os.environ["MONGODB_URI"]
 MONGODB_DB = os.environ["MONGODB_DB"]
-
-# ============================================================
-# EMAIL CONFIG
-# ============================================================
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = os.environ["EMAIL_ADDRESS"]
-SMTP_PASSWORD = os.environ["EMAIL_PASSWORD"]
-EMAIL_TO = os.environ["EMAIL_TO"]
-
-
-def send_mail(esito: str, messaggio: str, allegati: Optional[List[str]] = None):
-    subject = f"[PYTHON] - {esito}"
-    body = f"{messaggio}\n\nOra: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
-
-    email = MIMEMultipart()
-    email["From"] = SMTP_USER
-    email["To"] = EMAIL_TO
-    email["Subject"] = subject
-    email.attach(MIMEText(body, "plain"))
-
-    if allegati:
-        for path in allegati:
-            if path and os.path.exists(path):
-                with open(path, "rb") as f:
-                    part = MIMEApplication(f.read(), Name=os.path.basename(path))
-                    part["Content-Disposition"] = f'attachment; filename="{os.path.basename(path)}"'
-                    email.attach(part)
-
-    server = None
-    try:
-        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.send_message(email)
-        print("✅ [MAIL] Mail inviata con successo.")
-    except Exception as e:
-        print(f"❌ [MAIL] Errore durante l'invio della mail: {e}")
-    finally:
-        if server:
-            server.quit()
-
 
 # ============================================================
 # METRICHE
@@ -124,20 +78,6 @@ def tier_by_test_ratio(test_ratio: float) -> str:
     if test_ratio >= 0.06:
         return "B"
     return "C"
-
-
-# ============================================================
-# REPORT CSV
-# ============================================================
-def dump_csv(rows: List[dict], path: str):
-    if not rows:
-        return
-    fieldnames = sorted({k for r in rows for k in r.keys()})
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
 
 
 # ============================================================
@@ -291,11 +231,11 @@ if __name__ == "__main__":
         db = client[MONGODB_DB]
 
         # ---------------- EN ----------------
-        print("\n✅ [TIERLIST] GLOBAL (EN)")
+        #print("\n✅ [TIERLIST] GLOBAL (EN)")
         OP_IDS_EN = [
             "OP01", "OP02", "OP03", "OP04", "OP05", "OP06",
             "OP07", "OP08", "OP09", "OP10", "OP11", "OP12",
-            "OP13", "OP14", "EB01", "EB02", "PRB01", "PRB02"
+            "OP13", "OP14", "EB01", "EB02", "EB03", "PRB01", "PRB02"
         ]
 
         tiers_en, report_en = build_tierlist(db, OP_IDS_EN, market="en", only_verified_visible=True)
@@ -309,7 +249,7 @@ if __name__ == "__main__":
         })
 
         # ---------------- JP ----------------
-        print("\n✅ [TIERLIST] JAPANESE (JP)")
+        #print("\n✅ [TIERLIST] JAPANESE (JP)")
         OP_IDS_JP = [
             "OP01JP", "OP02JP", "OP03JP", "OP04JP", "OP05JP", "OP06JP",
             "OP07JP", "OP08JP", "OP09JP", "OP10JP", "OP11JP", "OP12JP",
@@ -327,11 +267,8 @@ if __name__ == "__main__":
         })
 
         print("\n✅ [END] Fine processo creazione tierlist.")
-        send_mail(
-            "✅ TIERLIST COMPLETATA",
-            "Tierlist EN/JP create con successo. In allegato i report CSV."
-        )
+        send_email("✅ [WORKFLOW] Tierlist Report]", "")
 
     except Exception:
-        send_mail("❌ ERRORE TIERLIST", traceback.format_exc())
+        send_email("🚫 [WORKFLOW] Tierlist Report]", traceback.format_exc())
         raise
