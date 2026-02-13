@@ -10,7 +10,7 @@ from typing import Optional
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
-from src.core.emailer import send_email
+from bson import ObjectId
 
 # =============================================================================
 # Environment & constants
@@ -55,17 +55,19 @@ def chunks(lst: list[int], n: int):
         yield lst[i:i + n]
 
 # Queue an email in MongoDB for later delivery by a dedicated worker.
-def enqueue_mail(db, subject: str, body: str, to: str) -> None:
+def enqueue_mail(db, subject: str, body: str, to: str, alert_id: ObjectId) -> None:
     db.Mail.insert_one({
         "subject": subject,
         "body": body,
         "to": to,
-        "date": datetime.now(timezone.utc),
-        "send": False,
+        "status": "queued", # queued, locked, sent, failed
+        "createdAt": datetime.now(timezone.utc),
         "lockedAt": None,
+        "lockedBy": None,
+        "lastError": None,
         "retries": 0,
+         "alertId": alert_id,
     })
-
 
 # =============================================================================
 # TCGplayer auth & pricing
@@ -299,6 +301,13 @@ async def main() -> None:
 
         card = a["cardData"]
 
+        created_at = a.get("createdAt")
+        if created_at and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        created_at_str = created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if created_at else "ERROR"
+
+
         base = D(a.get("basePrice"))
         target = D(a.get("priceTarget") or "0")
         direction = (a.get("direction") or a.get("targetCondition") or "lte").lower()
@@ -375,20 +384,19 @@ async def main() -> None:
         cardtrader_url = "https://www.cardtrader.com/invite/ivory-swamp-389"
 
         body = (
-            "Hi,<br><br>"
-            "We have good news for you. One of the cards you have been looking for has reached your alert conditions.<br><br>"
-            f"The <b>{card_name}</b> card is currently at <b>{hit_price:.2f}</b> (source: <b>{hit_label}</b>).<br><br>"
-            "Don't miss this opportunity!<br><br>"
+            "Hi,<br>"
+            "we have good news for you! <br><br>One of the cards you have been looking for has reached your price conditions.<br><br>"
+            f"<b>{clean_name} #{local_id}</b> card is currently at <b>{hit_price:.2f}</b>.<br><br>"
+            "Don't miss this opportunity!<br>"
             "<ul>"
             f"<li>Check it out on <a href='{cardmarket_url}'>Cardmarket</a></li>"
             + (f"<li>Check it out on <a href='{tcg_url}'>TCGPlayer</a></li>" if tcg_url else "")
             + f"<li>Check it out on <a href='{ebay_url}'>Ebay</a></li>"
             f"<li>Check it out on <a href='{cardtrader_url}'>CardTrader</a></li>"
             "</ul>"
-            "<br>You are receiving this notification because you have set up an alert for the card "
-            f"<i>'{card_name}'</i>.<br>"
-            "If you wish to stop receiving notifications, please log in to your account and update your alert preferences in the settings.<br>"
-            "This is a notification service of the RED LINE website (https://redline.cards/).<br><br>"
+            f"<br>You are receiving this notification because on date {created_at_str} you have set up an alert for the card {card_name}.<br>"
+            "If you wish to stop receiving notifications, please log in to your account and update your mail alert preferences in the settings.<br>"
+            "This is a free notification service of the RED LINE website (https://redline.cards/).<br><br>"
             "______<br><br>"
             "<i>This e-mail may contain confidential and/or privileged information.<br>"
             "If you are not the intended recipient or have received this e-mail in error, please notify the sender immediately and delete this e-mail.<br>"
@@ -403,22 +411,12 @@ async def main() -> None:
         # Queue email in DB
         enqueue_mail(
             db=db,
-            subject=f"[RED LINE] 🔔 {card_name} has a new price!",
+            subject=f"[RED LINE] 🔔 {clean_name} #{local_id} has a new price!",
             body=body,
             to=to_email,
+            alert_id=a["_id"],
         )
         print(f"[MAIL] Queued: {card_name} -> {to_email}")
-
-        # Optional: send immediately via SMTP (keep for debugging / transitional setup)
-        err = send_email(
-            subject=f"[RED LINE - WORKER] 🔔 {card_name} has a new price!",
-            body=body,
-            to=to_email,
-        )
-        if err:
-            print(f"[SMTP] Error -> {to_email}: {err}")
-        else:
-            print(f"[SMTP] OK -> {to_email}")
 
         # Update alert notification fields
         update = {"$set": {"lastNotifiedAt": now}}
