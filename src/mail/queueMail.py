@@ -386,7 +386,7 @@ async def main() -> None:
         body = (
             "Hi,<br>"
             "we have good news for you! <br><br>One of the cards you have been looking for has reached your price conditions.<br><br>"
-            f"<b>{clean_name} #{local_id}</b> card is currently at <b>{hit_price:.2f}</b>.<br><br>"
+            f"<b>{clean_name} #{local_id}</b> card is currently at <b>${hit_price:.2f}</b>.<br><br>"
             "Don't miss this opportunity!<br>"
             "<ul>"
             f"<li>Check it out on <a href='{cardmarket_url}'>Cardmarket</a></li>"
