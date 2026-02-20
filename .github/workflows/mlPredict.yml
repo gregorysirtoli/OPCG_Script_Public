@@ -1,0 +1,38 @@
+﻿name: Run Prediction Daily
+
+on:
+  workflow_dispatch:
+  schedule: # daily Europe/Rome (CET/CEST)
+    - cron: "0 5 * * *" # 05:00 UTC = 06:00 CET / 07:00 CEST
+
+jobs:
+  predict-and-store:
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r src/prediction/requirements.txt
+
+      - name: Run daily predictions
+        run: |
+          python -m src.prediction.run_predict
