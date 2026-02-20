@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from trainer import train_all
+from .trainer import train_all
 from src.core.emailer import send_email
 import traceback
 

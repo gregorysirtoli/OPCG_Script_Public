@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from datetime import timezone
 
-from features import safe_div
+from .features import safe_div
 
 def prep_cards(cards: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
     df = cards.copy()

@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from predictor import predict_and_store
+from .predictor import predict_and_store
 from src.core.emailer import send_email
 import traceback
 
