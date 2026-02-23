@@ -22,6 +22,21 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Restore trained artifacts
+        uses: actions/cache@v4
+        with:
+          path: artifacts
+          key: optcg-artifacts-${{ github.run_id }}
+          restore-keys: |
+            optcg-artifacts-
+
+      - name: Ensure model artifacts exist
+        run: |
+          if [ ! -f artifacts/optcg_quantile_artifacts.joblib ]; then
+            echo "Missing artifacts/optcg_quantile_artifacts.joblib. Run mlTrain workflow first."
+            exit 1
+          fi
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
