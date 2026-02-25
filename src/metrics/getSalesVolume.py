@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from statistics import mean, median
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -25,7 +26,7 @@ load_dotenv()
 
 # ========================= CONFIGURABLE CONSTANTS =========================
 SALES_SCALING_FACTOR: float = float(5)
-LOOKBACK_DAYS: int = int( "7")
+LOOKBACK_DAYS: int = int("7")
 EUROPE_ROME = ZoneInfo("Europe/Rome")
 
 # =============================== HELPERS =================================
@@ -85,6 +86,14 @@ def _get_listings(snap: Optional[Dict[str, Any]]) -> Optional[int]:
     if isinstance(v, (int, float)):
         return int(v)
     return None
+
+
+def _week_bounds_rome(target: datetime) -> Tuple[datetime, datetime]:
+    target_rome = target.astimezone(EUROPE_ROME)
+    monday_rome = target_rome - timedelta(days=target_rome.weekday())
+    week_start_rome = datetime(monday_rome.year, monday_rome.month, monday_rome.day, 0, 0, 0, 0, tzinfo=EUROPE_ROME)
+    sunday_rome = week_start_rome + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999000)
+    return _to_utc(week_start_rome), _to_utc(sunday_rome)
 
 
 # =============================== CORE ====================================
@@ -208,6 +217,75 @@ def upsert_sales_volume(db, day_rome: datetime, data: Dict[str, Any]) -> None:
     coll_sv.insert_one(data)
 
 
+def compute_weekly_sales_volume(db, reference_day_rome: datetime) -> Dict[str, Any]:
+    start_utc, end_utc = _week_bounds_rome(reference_day_rome)
+    week_number = start_utc.astimezone(EUROPE_ROME).isocalendar().week
+    coll_sv: Collection = db["SalesVolume"]
+
+    docs: List[Dict[str, Any]] = list(
+        coll_sv.find(
+            {"date": {"$gte": start_utc, "$lte": end_utc}},
+            {"_id": 0, "date": 1, "volume": 1, "units": 1},
+        )
+    )
+
+    if not docs:
+        return {
+            "weekStart": start_utc,
+            "weekEnd": end_utc,
+            "weekNumber": week_number,
+            "openVolume": 0,
+            "highVolume": 0,
+            "lowVolume": 0,
+            "closeVolume": 0,
+            "avgVolume": 0,
+            "medianVolume": 0,
+            "totalVolume": 0,
+            "openUnits": 0,
+            "highUnits": 0,
+            "lowUnits": 0,
+            "closeUnits": 0,
+            "avgUnits": 0,
+            "medianUnits": 0,
+            "totalUnits": 0,
+            "days": 0,
+            "createdAt": datetime.now(timezone.utc),
+        }
+
+    # order by Date ASC per open/close
+    docs.sort(key=lambda d: d.get("date", datetime.min.replace(tzinfo=timezone.utc)))
+
+    vols = [float(d.get("volume", 0)) for d in docs]
+    units = [int(d.get("units", 0)) for d in docs]
+
+    return {
+        "weekStart": start_utc,
+        "weekEnd": end_utc,
+        "weekNumber": week_number,
+        "openVolume": vols[0],
+        "highVolume": max(vols),
+        "lowVolume": min(vols),
+        "closeVolume": vols[-1],
+        "avgVolume": round(mean(vols), 2),
+        "medianVolume": round(median(vols), 2),
+        "totalVolume": round(sum(vols), 2),
+        "openUnits": units[0],
+        "highUnits": max(units),
+        "lowUnits": min(units),
+        "closeUnits": units[-1],
+        "avgUnits": round(mean(units), 2),
+        "medianUnits": int(median(units)),
+        "totalUnits": sum(units),
+        "days": len(docs),
+        "createdAt": datetime.now(timezone.utc),
+    }
+
+def upsert_sales_volume_weekly(db, data: Dict[str, Any]) -> None:
+    coll_w: Collection = db["SalesVolumeWeekly"]
+    coll_w.delete_many({"weekStart": data["weekStart"]})
+    coll_w.insert_one(data)
+
+# =============================== MAIN =================================
 def main() -> int:
     try:
         MONGO_URI = os.environ["MONGODB_URI"]
@@ -225,13 +303,20 @@ def main() -> int:
 
         summary = f"[SalesVolume] Upserted {data}"
         print(f"{summary}")
-        
-        send_email("✅ [WORKFLOW] Sales Volume Report", summary)
+
+        # Se oggi è lunedì, crea il riepilogo settimanale (lun-dom) della settimana appena conclusa.
+        if now_rome.weekday() == 0:
+            weekly_data = compute_weekly_sales_volume(db, yesterday_rome)
+            upsert_sales_volume_weekly(db, weekly_data)
+            summary += f"\n[SalesVolumeWeekly] Upserted {weekly_data}"
+
+        send_email("[WORKFLOW] Sales Volume Report", summary)
         return 0
 
     except Exception:
-        send_email("🚫 [WORKFLOW] Sales Volume Report", traceback.format_exc())
+        send_email("[WORKFLOW][ERROR] Sales Volume Report", traceback.format_exc())
         raise
+
 
 if __name__ == "__main__":
 
