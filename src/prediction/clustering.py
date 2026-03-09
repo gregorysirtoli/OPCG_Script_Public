@@ -7,8 +7,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.cluster import MiniBatchKMeans
 
 def build_cluster_pipeline(n_clusters: int) -> Pipeline:
-    cat_cols = ["rarityName", "printing", "color_1", "setId"]
-    num_cols = ["alternate", "card_age_weeks"]
+    cat_cols = [
+        "rarityName", "rarityId", "printing", "color_1",
+        "setId", "setName", "illustrator", "cardType",
+        "subTypes", "attribute"
+    ]
+    num_cols = ["alternate", "cost", "power", "card_age_weeks"]
 
     pre = ColumnTransformer(
         transformers=[
@@ -29,12 +33,22 @@ def build_cluster_pipeline(n_clusters: int) -> Pipeline:
 
 def fit_clusters(cards_df: pd.DataFrame, n_clusters: int) -> tuple[Pipeline, pd.Series]:
     pipe = build_cluster_pipeline(n_clusters)
-    X = cards_df[["rarityName", "printing", "color_1", "setId", "alternate", "card_age_weeks"]]
+    X = cards_df[[
+        "rarityName", "rarityId", "printing", "color_1",
+        "setId", "setName", "illustrator", "cardType",
+        "subTypes", "attribute",
+        "alternate", "cost", "power", "card_age_weeks"
+    ]]
     pipe.fit(X)
     cluster_ids = pipe.predict(X)
     return pipe, pd.Series(cluster_ids, index=cards_df.index, name="clusterId")
 
 def predict_clusters(pipe: Pipeline, cards_df: pd.DataFrame) -> pd.Series:
-    X = cards_df[["rarityName", "printing", "color_1", "setId", "alternate", "card_age_weeks"]]
+    X = cards_df[[
+        "rarityName", "rarityId", "printing", "color_1",
+        "setId", "setName", "illustrator", "cardType",
+        "subTypes", "attribute",
+        "alternate", "cost", "power", "card_age_weeks"
+    ]]
     cluster_ids = pipe.predict(X)
     return pd.Series(cluster_ids, index=cards_df.index, name="clusterId")

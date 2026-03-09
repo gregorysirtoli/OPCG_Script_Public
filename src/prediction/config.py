@@ -85,6 +85,7 @@ class MongoConfig:
    db_name: str = os.environ["MONGODB_DB"]
    col_cards: str = "Cards"
    col_prices: str = "Prices"
+   col_sets: str = "Sets"
 
    # nuove collezioni
    col_pred: str = "ml_predictions_daily"

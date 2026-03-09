@@ -26,9 +26,10 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     asof = pd.Timestamp(datetime.now(timezone.utc))
 
     cards = load_collection(db, mongo.col_cards, match={"type": "Cards"})
+    sets = load_collection(db, getattr(mongo, "col_sets", "Sets"))
     prices = load_collection(db, mongo.col_prices)
 
-    cards_p = prep_cards(cards, asof)
+    cards_p = prep_cards(cards, asof, sets)
 
     daily = prep_prices_daily(prices)
     daily = reindex_daily_fill(daily)
@@ -42,7 +43,12 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
 
     # join Cards
     latest = latest.merge(
-        cards_p[["id", "rarityName", "printing", "color_1", "setId", "alternate", "card_age_weeks"]],
+        cards_p[[
+            "id", "rarityName", "rarityId", "printing", "color_1",
+            "setId", "setName", "illustrator", "cardType",
+            "subTypes", "attribute",
+            "alternate", "cost", "power", "card_age_weeks"
+        ]],
         left_on="itemId",
         right_on="id",
         how="left"
@@ -51,7 +57,12 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     # clusterId
     latest["clusterId"] = predict_clusters(
         cluster_pipe,
-        latest[["rarityName","printing","color_1","setId","alternate","card_age_weeks"]].copy()
+        latest[[
+            "rarityName","rarityId","printing","color_1",
+            "setId","setName","illustrator","cardType",
+            "subTypes","attribute",
+            "alternate","cost","power","card_age_weeks"
+        ]].copy()
     ).values
 
     # tier (basato sul prezzo corrente)

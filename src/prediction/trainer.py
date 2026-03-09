@@ -22,12 +22,13 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
 
     # carico dati
     cards = load_collection(db, mongo.col_cards, match={"type": "Cards"})
+    sets = load_collection(db, getattr(mongo, "col_sets", "Sets"))
     prices = load_collection(db, mongo.col_prices)
 
     asof = pd.Timestamp(datetime.now(timezone.utc))
 
     # prep
-    cards_p = prep_cards(cards, asof)
+    cards_p = prep_cards(cards, asof, sets)
     daily = prep_prices_daily(prices)
     daily = reindex_daily_fill(daily)
 
@@ -50,7 +51,12 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
 
     # join Cards (Prices.itemId -> Cards.id)
     train_df = train_df.merge(
-        cards_p[["id", "rarityName", "printing", "color_1", "setId", "alternate", "card_age_weeks"]],
+        cards_p[[
+            "id", "rarityName", "rarityId", "printing", "color_1",
+            "setId", "setName", "illustrator", "cardType",
+            "subTypes", "attribute",
+            "alternate", "cost", "power", "card_age_weeks"
+        ]],
         left_on="itemId",
         right_on="id",
         how="left"
@@ -58,7 +64,12 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
 
     # clustering DNA
     cluster_pipe, cluster_ids = fit_clusters(
-        train_df[["rarityName","printing","color_1","setId","alternate","card_age_weeks"]].copy(),
+        train_df[[
+            "rarityName","rarityId","printing","color_1",
+            "setId","setName","illustrator","cardType",
+            "subTypes","attribute",
+            "alternate","cost","power","card_age_weeks"
+        ]].copy(),
         n_clusters=ml.n_clusters
     )
     train_df["clusterId"] = cluster_ids.values
@@ -67,14 +78,18 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
     train_df["tier"] = train_df["price"].apply(lambda p: assign_tier(float(p), ml.low_max, ml.mid_max))
 
     # colonne modello
-    cat_cols = ["rarityName", "printing", "color_1", "setId"]
+    cat_cols = [
+        "rarityName", "rarityId", "printing", "color_1",
+        "setId", "setName", "illustrator", "cardType",
+        "subTypes", "attribute"
+    ]
     num_cols = [
         "log_price",
         "ret_7d", "ret_14d", "ret_28d", "ret_56d",
         "vol_28d", "mom_14d",
         "sellers_chg_28d", "listings_chg_28d",
         "price_to_listings", "sellers_to_listings",
-        "alternate", "card_age_weeks", "clusterId",
+        "alternate", "cost", "power", "card_age_weeks", "clusterId",
         "spread", "liq_index", "shock"
     ]
 

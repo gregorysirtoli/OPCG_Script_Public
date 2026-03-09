@@ -6,26 +6,57 @@ from datetime import timezone
 
 from .features import safe_div
 
-def prep_cards(cards: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
+def prep_cards(cards: pd.DataFrame, asof: pd.Timestamp, sets: pd.DataFrame | None = None) -> pd.DataFrame:
+    """
+    Normalizza i campi Cards e aggiunge feature statiche per clustering/modello.
+    Se releaseDate manca, usa quello della collection Sets tramite setId.
+    """
     df = cards.copy()
 
-    # campi visti nel tuo esempio :contentReference[oaicite:2]{index=2}
-    df["id"] = df.get("id")
-    df["rarityName"] = df.get("rarityName", "").fillna("")
-    df["printing"] = df.get("printing", "").fillna("")
-    df["setId"] = df.get("setId", "").fillna("")
-    df["alternate"] = pd.to_numeric(df.get("alternate"), errors="coerce").fillna(0).astype(int)
+    # mappature Sets (se disponibili)
+    sets_release = {}
+    sets_name = {}
+    if sets is not None and not sets.empty:
+        sets_release = pd.to_datetime(sets.set_index("id")["releaseDate"], errors="coerce", utc=True).to_dict()
+        if "name" in sets.columns:
+            sets_name = sets.set_index("id")["name"].to_dict()
 
-    # color è spesso lista nel tuo schema :contentReference[oaicite:3]{index=3}
     def first_or_empty(x):
         if isinstance(x, list):
             return x[0] if x else ""
         return x if x is not None else ""
+
+    def list_to_key(x):
+        if isinstance(x, list):
+            vals = [str(v).strip() for v in x if v]
+            return "|".join(sorted(set(vals)))
+        return str(x).strip() if x is not None else ""
+
+    df["id"] = df.get("id")
+    df["rarityName"] = df.get("rarityName", "").fillna("")
+    df["rarityId"] = df.get("rarityId", "").fillna("")
+    df["printing"] = df.get("printing", "").fillna("")
+    df["setId"] = df.get("setId", "").fillna("")
+    df["setName"] = df.get("setName", "").fillna("").replace("", None)
+    df["illustrator"] = df.get("illustrator", "").fillna("")
+    df["cardType"] = df.get("cardType", "").apply(first_or_empty).fillna("")
+    df["subTypes"] = df.get("subTypes", "").apply(list_to_key)
+    df["attribute"] = df.get("attribute", "").apply(list_to_key)
+    df["alternate"] = pd.to_numeric(df.get("alternate"), errors="coerce").fillna(0).astype(int)
+    df["cost"] = pd.to_numeric(df.get("cost"), errors="coerce").fillna(0)
+    df["power"] = pd.to_numeric(df.get("power"), errors="coerce").fillna(0)
+
+    # color è spesso lista
     df["color_1"] = df.get("color", "").apply(first_or_empty)
 
-    # età carta
-    rd = pd.to_datetime(df.get("releaseDate", pd.NaT), errors="coerce", utc=True)
-    # se asof non è UTC, convertiamo
+    # setName fallback da Sets se manca
+    df["setName"] = df["setName"].fillna(df["setId"].map(sets_name)).fillna("")
+
+    # releaseDate: preferisci quello della carta, altrimenti quello del set
+    rd_cards = pd.to_datetime(df.get("releaseDate", pd.NaT), errors="coerce", utc=True)
+    rd_sets = df["setId"].map(sets_release)
+    rd = rd_cards.fillna(rd_sets)
+
     if asof.tzinfo is None:
         asof = asof.tz_localize(timezone.utc)
     age_days = (asof.tz_convert("UTC") - rd).dt.days
