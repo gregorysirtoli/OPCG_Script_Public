@@ -90,14 +90,27 @@ def prep_prices_daily(prices: pd.DataFrame) -> pd.DataFrame:
         else:
             df[f] = pd.NA
 
-    # media dinamica: somma dei valori validi / conteggio valori validi
+    # risoluzione prezzo: primo valore valido seguendo la priorita'
+    price_priority = [
+        "cmPriceTrend",
+        "pricePrimary",
+        "priceUngraded",
+        "pricePriceCharting",
+        "cmPriceAvg",
+        "cmAvg1d",
+        "cmAvg7d",
+        "cmAvg30d",
+        "cmPriceLow",
+    ]
+    # azzera valori non positivi per evitare che entrino nella catena
+    df[price_priority] = df[price_priority].where(df[price_priority] > 0)
+
+    # primo valido per riga (vectorizzato, molto piu veloce di apply axis=1)
+    df["price"] = df[price_priority].bfill(axis=1).iloc[:, 0]
+
     price_matrix = df[price_fields].astype("float64")
-
     valid = (price_matrix.notna()) & (price_matrix > 0)
-    sum_prices = price_matrix.where(valid).sum(axis=1, skipna=True)
     cnt_prices = valid.sum(axis=1)
-
-    df["price"] = (sum_prices / cnt_prices).where(cnt_prices > 0)
 
     # spread proxy: max - min tra i prezzi validi (stessa logica del valid)
     df["price_min"] = price_matrix.where(valid).min(axis=1, skipna=True)
