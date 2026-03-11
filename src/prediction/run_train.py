@@ -23,9 +23,16 @@ if __name__ == "__main__":
 
         print(f"✅ Fine esecuzione: {end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"⏱️ Tempo totale: {elapsed:.2f} secondi")
-        
-        send_email("✅ [WORKFLOW] Train Report]", "")
+
+        minutes = elapsed / 60.0
+        body = (
+            f"Start: {start_dt:%Y-%m-%d %H:%M:%S}\n"
+            f"End:   {end_dt:%Y-%m-%d %H:%M:%S}\n"
+            f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)"
+        )
+
+        send_email("✅ [WORKFLOW] Train Report", body)
 
     except Exception:
-        send_email("🚫 [WORKFLOW] Train Report]", traceback.format_exc())
+        send_email("🚫 [WORKFLOW] Train Report", traceback.format_exc())
         raise
