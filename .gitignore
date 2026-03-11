@@ -13,8 +13,9 @@ venv/
 *.log
 logs/
 
+# Artifact
+artifacts
 
 # OS
 .DS_Store
-
 /prvate_prviders
