@@ -14,10 +14,12 @@ from .features import assign_tier
 from .clustering import predict_clusters
 from .modeling import predict_tier_models
 
+
 def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConfig(), ml: MLConfig = MLConfig()):
     db = get_db(mongo.uri, mongo.db_name)
 
     artifacts = joblib.load(f"{artifacts_dir}/optcg_quantile_artifacts.joblib")
+    ml_artifact = artifacts.get("ml_config", ml)
     tier_models = artifacts["tier_models"]
     cluster_pipe = artifacts["cluster_pipe"]
     cat_cols = artifacts["cat_cols"]
@@ -32,16 +34,18 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     cards_p = prep_cards(cards, asof, sets)
 
     daily = prep_prices_daily(prices)
-    daily = reindex_daily_fill(daily)
-    daily = filter_min_history(daily, ml.min_history_days)
+    daily = reindex_daily_fill(daily, max_ffill_days=ml_artifact.max_ffill_days)
+    daily = filter_min_history(daily, ml_artifact.min_history_days)
 
-    win_ret = {"7d": ml.win_ret_1, "14d": ml.win_ret_2, "28d": ml.win_ret_3, "56d": ml.win_ret_4}
-    feat = add_features_daily(daily, win_ret, ml.win_vol, ml.win_mom, ml.win_liq)
+    win_ret = {
+        "7d": ml_artifact.win_ret_1,
+        "14d": ml_artifact.win_ret_2,
+        "28d": ml_artifact.win_ret_3,
+        "56d": ml_artifact.win_ret_4,
+    }
+    feat = add_features_daily(daily, win_ret, ml_artifact.win_vol, ml_artifact.win_mom, ml_artifact.win_liq)
 
-    # prendo l’ultima riga per itemId = stato corrente
     latest = feat.sort_values(["itemId", "date"]).groupby("itemId", as_index=False).tail(1)
-
-    # join Cards
     latest = latest.merge(
         cards_p[[
             "id", "rarityName", "rarityId", "printing", "color_1",
@@ -54,24 +58,19 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
         how="left"
     ).dropna(subset=["id"])
 
-    # clusterId
     latest["clusterId"] = predict_clusters(
         cluster_pipe,
         latest[[
-            "rarityName","rarityId","printing","color_1",
-            "setId","setName","illustrator","cardType",
-            "subTypes","attribute",
-            "alternate","cost","power","card_age_weeks"
+            "rarityName", "rarityId", "printing", "color_1",
+            "setId", "setName", "illustrator", "cardType",
+            "subTypes", "attribute",
+            "alternate", "cost", "power", "card_age_weeks"
         ]].copy()
     ).values
 
-    # tier (basato sul prezzo corrente)
-    latest["tier"] = latest["price"].apply(lambda p: assign_tier(float(p), ml.low_max, ml.mid_max))
-
-    # fill numerici
+    latest["tier"] = latest["price"].apply(lambda p: assign_tier(float(p), ml_artifact.low_max, ml_artifact.mid_max))
     latest[num_cols] = latest[num_cols].fillna(0)
 
-    # predizioni quantili per tier
     preds_docs: list[dict] = []
     all_scored_rows = []
 
@@ -80,18 +79,9 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
         if df_t.empty:
             continue
 
-        pred_map = predict_tier_models(models, df_t)  # q -> ndarray
-
-        # NO CLIP: mantieni i valori reali del modello
+        pred_map = predict_tier_models(models, df_t)
         for q, arr in pred_map.items():
             pred_map[q] = pd.Series(arr, index=df_t.index)
-            # pred_map[q] = pd.Series(arr, index=df_t.index).clip(-0.95, 5.0)
-            # oppure
-            # pred_map[q] = pd.Series(arr, index=df_t.index)
-            #pred_map[q] = pred_map[q].clip(
-            #    lower=pred_map[q].quantile(0.01),
-            #    upper=pred_map[q].quantile(0.99)
-            #)
 
         df_t["pred_q20_28d"] = pred_map.get(0.2, pd.Series(0, index=df_t.index))
         df_t["pred_q50_28d"] = pred_map.get(0.5, pd.Series(0, index=df_t.index))
@@ -101,8 +91,8 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
 
         for _, r in df_t.iterrows():
             preds_docs.append({
-                "_id": str(r["id"]),                 # <-- AGGIUNGI QUESTO
-                "cardId": str(r["id"]),              # <-- opzionale (puoi anche toglierlo)
+                "_id": str(r["id"]),
+                "cardId": str(r["id"]),
                 "asOfDate": asof.to_pydatetime(),
                 "tier": r["tier"],
                 "clusterId": int(r["clusterId"]),
@@ -113,20 +103,15 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
                 "lastPriceDate": r["date"].to_pydatetime(),
             })
 
-
-    # upsert predictions (1 doc per cardId)
-    SAVE_PREDICTIONS = True
-    if SAVE_PREDICTIONS:
+    if preds_docs:
         upsert_many(db, mongo.col_pred, preds_docs, key_fields=["_id"])
 
     if not all_scored_rows:
-        print("⚠️ Nessuna predizione generata (tier vuoti o dati insufficienti).")
+        print("Nessuna predizione generata (tier vuoti o dati insufficienti).")
         return
 
     scored = pd.concat(all_scored_rows, ignore_index=True)
-
-    TOP_N = 120
-
+    top_n = 120
     rank_by_tier = {}
 
     for tier in ["low", "mid", "high"]:
@@ -135,50 +120,40 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
             rank_by_tier[tier] = {"top_up": [], "top_down": []}
             continue
 
-        top_up = df_t.sort_values("pred_q80_28d", ascending=False).head(TOP_N)["id"].tolist()
-        top_down = df_t.sort_values("pred_q20_28d", ascending=True).head(TOP_N)["id"].tolist()
+        top_up = df_t.sort_values("pred_q80_28d", ascending=False).head(top_n)["id"].tolist()
+        top_down = df_t.sort_values("pred_q20_28d", ascending=True).head(top_n)["id"].tolist()
+        rank_by_tier[tier] = {"top_up": top_up, "top_down": top_down}
 
-        rank_by_tier[tier] = {
-            "top_up": top_up,
-            "top_down": top_down
-        }
-
-    # (opzionale) ranking globale “mix” prendendo i migliori score da tutti
-    top_up_global = scored.sort_values("pred_q80_28d", ascending=False).head(TOP_N)["id"].tolist()
-    top_down_global = scored.sort_values("pred_q20_28d", ascending=True).head(TOP_N)["id"].tolist()
+    top_up_global = scored.sort_values("pred_q80_28d", ascending=False).head(top_n)["id"].tolist()
+    top_down_global = scored.sort_values("pred_q20_28d", ascending=True).head(top_n)["id"].tolist()
 
     rank_doc = {
         "asOfDate": asof.to_pydatetime(),
-
-        # ranking globale (opzionale, puoi anche toglierlo)
         "top_up": top_up_global,
         "top_down": top_down_global,
-
-        # ranking per tier (quello che ti serve)
         "byTier": {
-            "low":  {"top_up": rank_by_tier["low"]["top_up"],  "top_down": rank_by_tier["low"]["top_down"]},
-            "mid":  {"top_up": rank_by_tier["mid"]["top_up"],  "top_down": rank_by_tier["mid"]["top_down"]},
-            "high": {"top_up": rank_by_tier["high"]["top_up"], "top_down": rank_by_tier["high"]["top_down"]},
+            "low": rank_by_tier["low"],
+            "mid": rank_by_tier["mid"],
+            "high": rank_by_tier["high"],
         },
-
         "meta": {
-            "horizon_days": ml.horizon_days,
-            "min_history_days": ml.min_history_days,
-            "topN_per_tier": TOP_N,
+            "horizon_days": ml_artifact.horizon_days,
+            "min_history_days": ml_artifact.min_history_days,
+            "topN_per_tier": top_n,
             "tiers": {
-                "low": {"max": ml.low_max},
-                "mid": {"max": ml.mid_max},
-                "high": {"min_exclusive": ml.mid_max},
-            }
-        }
+                "low": {"max": ml_artifact.low_max},
+                "mid": {"max": ml_artifact.mid_max},
+                "high": {"min_exclusive": ml_artifact.mid_max},
+            },
+        },
     }
 
     db[mongo.col_rank].replace_one(
         {"_id": "latest"},
         {"_id": "latest", **rank_doc},
-        upsert=True
+        upsert=True,
     )
 
-    print("✅ Predizione completata.")
-    print("Top up sample:", top_up[:5])
-    print("Top down sample:", top_down[:5])
+    print("Predizione completata.")
+    print("Top up sample:", top_up_global[:5])
+    print("Top down sample:", top_down_global[:5])
