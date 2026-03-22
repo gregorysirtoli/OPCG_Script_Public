@@ -111,6 +111,8 @@ def main() -> int:
     projection = {
         "_id": 1,
         ITEM_ID_FIELD: 1,
+        "name": 1,
+        "localId": 1,
         PRIMARY_ID_FIELD: 1,
         EXTERNAL_URI_FIELD: 1,
         CM_ID_FIELD: 1,
@@ -256,6 +258,8 @@ def main() -> int:
                                     {
                                         "itemId": item_id,
                                         "cardId": str(doc.get("_id")),
+                                        "name": doc.get("name") or "",
+                                        "localId": doc.get("localId") or "",
                                         "currentUri": external_uri,
                                         **alert_payload,
                                     }
@@ -303,18 +307,20 @@ def main() -> int:
     send_email(os.getenv("MAIL_SUBJECT", "[PRICE] Report"), summary)
 
     if secondary_alerts:
-        lines = [
-            "URL issues detected:",
-            "",
-        ]
+        lines = ["<b>PriceCharting URL issues detected:</b><br><br>"]
         for alert in secondary_alerts:
-            lines.append(
-                (
-                    f"- itemId={alert.get('itemId')} | cardId={alert.get('cardId')} | "
-                    f"reason={alert.get('reason')} | currentUri={alert.get('currentUri')} | "
-                    f"requestedUrl={alert.get('requestedUrl')} | finalUrl={alert.get('finalUrl')}"
-                )
-            )
+            local_id = alert.get("localId") or ""
+            card_link = f"http://localhost:3000/cards?s={local_id}" if local_id else "-"
+            lines.append(f"<b>Name:</b> {alert.get('name') or '-'}")
+            lines.append(f"<b>localId:</b> {alert.get('localId') or '-'}")
+            lines.append(f"<b>Link:</b> <a href=\"{card_link}\">{card_link}</a>" if local_id else "<b>Link:</b> -")
+            lines.append(f"<b>itemId:</b> {alert.get('itemId') or '-'}")
+            lines.append(f"<b>cardId:</b> {alert.get('cardId') or '-'}")
+            lines.append(f"<b>reason:</b> {alert.get('reason') or '-'}")
+            lines.append(f"<b>currentUri:</b> {alert.get('currentUri') or '-'}")
+            lines.append(f"<b>requestedUrl:</b> {alert.get('requestedUrl') or '-'}")
+            lines.append(f"<b>finalUrl:</b> {alert.get('finalUrl') or '-'}")
+            lines.append("<br><hr><br>")
         send_email("[PRICE] URL issues", "<br>".join(lines))
 
     # log su collection Logs
