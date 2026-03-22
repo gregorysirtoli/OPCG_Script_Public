@@ -136,6 +136,7 @@ def main() -> int:
     DISABLE_SHARDING = os.getenv("DISABLE_SHARDING", "false").lower() == "true"
 
     rows_batch: List[Dict[str, Any]] = []
+    secondary_alerts: List[Dict[str, Any]] = []
     inserted = 0
     total = 0
     fetched = 0
@@ -227,11 +228,39 @@ def main() -> int:
                         # --- eventuali update soft su Cards ---
                         if updates_map:
                             updates_clean = {}
-                            if EXTERNAL_ID_FIELD in updates_map and updates_map[EXTERNAL_ID_FIELD] is not None:
-                                updates_clean[EXTERNAL_ID_FIELD] = int(updates_map[EXTERNAL_ID_FIELD])
-                            if EXTERNAL_URI_FIELD in updates_map and updates_map[EXTERNAL_URI_FIELD]:
-                                # normalizza a lower se vuoi
-                                updates_clean[EXTERNAL_URI_FIELD] = str(updates_map[EXTERNAL_URI_FIELD]).lower()
+                            external_id_value = None
+                            if EXTERNAL_ID_FIELD and EXTERNAL_ID_FIELD in updates_map and updates_map[EXTERNAL_ID_FIELD] is not None:
+                                external_id_value = updates_map[EXTERNAL_ID_FIELD]
+                            elif updates_map.get("externalId") is not None:
+                                external_id_value = updates_map["externalId"]
+                            elif updates_map.get("PriceChartingId") is not None:
+                                external_id_value = updates_map["PriceChartingId"]
+
+                            if EXTERNAL_ID_FIELD and external_id_value is not None:
+                                updates_clean[EXTERNAL_ID_FIELD] = int(external_id_value)
+
+                            external_uri_value = None
+                            if EXTERNAL_URI_FIELD and updates_map.get(EXTERNAL_URI_FIELD):
+                                external_uri_value = updates_map[EXTERNAL_URI_FIELD]
+                            elif updates_map.get("externalUri"):
+                                external_uri_value = updates_map["externalUri"]
+                            elif updates_map.get("priceChartingUri"):
+                                external_uri_value = updates_map["priceChartingUri"]
+
+                            if EXTERNAL_URI_FIELD and external_uri_value:
+                                updates_clean[EXTERNAL_URI_FIELD] = str(external_uri_value).lower()
+
+                            alert_payload = updates_map.get("__secondary_alert__")
+                            if isinstance(alert_payload, dict):
+                                secondary_alerts.append(
+                                    {
+                                        "itemId": item_id,
+                                        "cardId": str(doc.get("_id")),
+                                        "currentUri": external_uri,
+                                        **alert_payload,
+                                    }
+                                )
+
                             if updates_clean:
                                 updates_clean["updatedAt"] = datetime.utcnow()
                                 coll_cards.update_one({"_id": doc["_id"]}, {"$set": updates_clean})
@@ -272,6 +301,21 @@ def main() -> int:
     summary = f"Inserted: {inserted} / Scanned: {total}"
     logger.info(summary)
     send_email(os.getenv("MAIL_SUBJECT", "[PRICE] Report"), summary)
+
+    if secondary_alerts:
+        lines = [
+            "URL issues detected:",
+            "",
+        ]
+        for alert in secondary_alerts:
+            lines.append(
+                (
+                    f"- itemId={alert.get('itemId')} | cardId={alert.get('cardId')} | "
+                    f"reason={alert.get('reason')} | currentUri={alert.get('currentUri')} | "
+                    f"requestedUrl={alert.get('requestedUrl')} | finalUrl={alert.get('finalUrl')}"
+                )
+            )
+        send_email("[PRICE] URL issues", "<br>".join(lines))
 
     # log su collection Logs
     try:
