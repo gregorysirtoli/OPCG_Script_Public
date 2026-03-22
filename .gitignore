@@ -18,4 +18,6 @@ artifacts
 
 # OS
 .DS_Store
+/prvate_prviders/
 /prvate_prviders
+/prvate_prviders/*
