@@ -6,6 +6,108 @@ from pymongo.database import Database
 
 GRADING_FEES = 30
 
+def _clamp(n: Optional[float], low: float, high: float) -> Optional[float]:
+    if n is None:
+        return None
+    return max(low, min(high, float(n)))
+
+def _score_0_100(n: Optional[float]) -> Optional[float]:
+    n = _clamp(n, 0.0, 100.0)
+    return _round2(n)
+
+def _scale_0_100(value: Optional[float], cap: float) -> Optional[float]:
+    if value is None or cap <= 0:
+        return None
+    return _score_0_100((value / cap) * 100.0)
+
+def _compute_liquidity_score(
+    sellers: Any,
+    listings: Any,
+    spread_pct: Optional[float],
+) -> Optional[float]:
+    sellers_n = _to_number(sellers)
+    listings_n = _to_number(listings)
+
+    sellers_score = _scale_0_100(sellers_n, 20.0)
+    listings_score = _scale_0_100(listings_n, 40.0)
+    spread_score = None
+    if spread_pct is not None:
+        # lower spread is generally healthier / easier to exit
+        spread_score = _score_0_100(100.0 - min(max(spread_pct, 0.0), 40.0) * 2.5)
+
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for score, weight in (
+        (sellers_score, 0.45),
+        (listings_score, 0.35),
+        (spread_score, 0.20),
+    ):
+        if score is None:
+            continue
+        weighted_sum += score * weight
+        total_weight += weight
+
+    if total_weight == 0:
+        return None
+    return _round2(weighted_sum / total_weight)
+
+def _compute_weighted_momentum(
+    pct7: Optional[float],
+    pct30: Optional[float],
+    pct90: Optional[float],
+) -> Optional[float]:
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for value, weight in ((pct7, 0.5), (pct30, 0.3), (pct90, 0.2)):
+        if value is None:
+            continue
+        weighted_sum += value * weight
+        total_weight += weight
+
+    if total_weight == 0:
+        return None
+    return _round2(weighted_sum / total_weight)
+
+def _compute_momentum_score(weighted_momentum_pct: Optional[float]) -> Optional[float]:
+    if weighted_momentum_pct is None:
+        return None
+    # map roughly -50%..+50% to 0..100 and clamp
+    return _score_0_100(((weighted_momentum_pct + 50.0) / 100.0) * 100.0)
+
+def _compute_grading_attractiveness(
+    gp_psa10: Optional[float],
+    gp_bsg10: Optional[float],
+    liquidity_score: Optional[float],
+) -> Optional[float]:
+    best_profit = max(
+        gp_psa10 if gp_psa10 is not None else float("-inf"),
+        gp_bsg10 if gp_bsg10 is not None else float("-inf"),
+    )
+    if best_profit == float("-inf"):
+        best_profit = None
+
+    profit_score = None
+    if best_profit is not None:
+        # cap at 150% upside for scoring
+        profit_score = _score_0_100((max(best_profit, 0.0) / 150.0) * 100.0)
+
+    # If we do not have any grading profit reference, this card should not
+    # surface as a grading candidate just because it has good liquidity.
+    if profit_score is None:
+        return None
+
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for score, weight in ((profit_score, 0.75), (liquidity_score, 0.25)):
+        if score is None:
+            continue
+        weighted_sum += score * weight
+        total_weight += weight
+
+    if total_weight == 0:
+        return None
+    return _round2(weighted_sum / total_weight)
+
 def _to_number(v: Any) -> Optional[float]:
     if v is None:
         return None
@@ -228,6 +330,19 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
         gp_psa10 = None
         gp_bsg10 = None
 
+    liquidity_score = _compute_liquidity_score(
+        sellers=sellers,
+        listings=listings,
+        spread_pct=low_vs_trend_discount_pct,
+    )
+    momentum_weighted_pct = _compute_weighted_momentum(pct7, pct30, pct90)
+    momentum_score = _compute_momentum_score(momentum_weighted_pct)
+    grading_attractiveness_score = _compute_grading_attractiveness(
+        gp_psa10=gp_psa10,
+        gp_bsg10=gp_bsg10,
+        liquidity_score=liquidity_score,
+    )
+
     return {
         "createdAt": datetime.now(timezone.utc),
         # marketData
@@ -270,6 +385,12 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
 
         # spread low vs trend
         "spread": low_vs_trend_discount_pct, # %
+
+        # derived deterministic signals for discovery / ranking
+        "liquidityScore": liquidity_score, # 0..100
+        "momentumWeighted": momentum_weighted_pct, # %
+        "momentumScore": momentum_score, # 0..100
+        "gradingAttractivenessScore": grading_attractiveness_score, # 0..100
     }
 
 def update_cards_market_data(db: Database, days_back: int = 400, limit_ids: Optional[List[str]] = None) -> Tuple[int, int]:
