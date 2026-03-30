@@ -31,9 +31,10 @@ DNA CLUSTERING
 
 MODELLO (per fasce prezzo)
 - Tier (calcolato su priceNow):
-  - low: < 5 EUR
-  - mid: 5 - 150 EUR
-  - high: > 150 EUR
+   - low: 0.5 - 10 EUR
+   - mid: 10 - 100 EUR
+   - high: 100 - 750 EUR
+   - grail: >= 750 EUR
 - Modelli separati per tier.
 - Tipo modello: Quantile Regression (LightGBM) per stimare la distribuzione del rendimento a 28 giorni:
   - q20 = downside realistico (scenario negativo plausibile)
@@ -74,8 +75,10 @@ class MLConfig:
     n_clusters: int = 30
     max_ffill_days: int = 7
 
-    low_max: float = 5.0
-    mid_max: float = 150.0
+    low_min: float = 0.5
+    low_max: float = 10.0
+    mid_max: float = 100.0
+    high_max: float = 750.0
 
     quantiles: tuple[float, ...] = (0.2, 0.5, 0.8)
 

@@ -22,9 +22,20 @@ def safe_div(a: pd.Series, b: pd.Series) -> pd.Series:
     b2 = b.replace(0, np.nan)
     return a / b2
 
-def assign_tier(price: float, low_max: float, mid_max: float) -> str:
+def assign_tier(
+    price: float,
+    low_max: float,
+    mid_max: float,
+    high_max: float = 750.0,
+    low_min: float = 0.5,
+) -> str:
+    # Prezzi molto bassi restano nel bucket low per evitare tier vuoti/non previsti.
+    if price < low_min:
+        return "low"
     if price < low_max:
         return "low"
     if price <= mid_max:
         return "mid"
-    return "high"
+    if price < high_max:
+        return "high"
+    return "grail"

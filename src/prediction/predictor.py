@@ -20,6 +20,10 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
 
     artifacts = joblib.load(f"{artifacts_dir}/optcg_quantile_artifacts.joblib")
     ml_artifact = artifacts.get("ml_config", ml)
+    low_min = getattr(ml_artifact, "low_min", 0.5)
+    low_max = getattr(ml_artifact, "low_max", 10.0)
+    mid_max = getattr(ml_artifact, "mid_max", 100.0)
+    high_max = getattr(ml_artifact, "high_max", 750.0)
     tier_models = artifacts["tier_models"]
     cluster_pipe = artifacts["cluster_pipe"]
     cat_cols = artifacts["cat_cols"]
@@ -68,7 +72,9 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
         ]].copy()
     ).values
 
-    latest["tier"] = latest["price"].apply(lambda p: assign_tier(float(p), ml_artifact.low_max, ml_artifact.mid_max))
+    latest["tier"] = latest["price"].apply(
+        lambda p: assign_tier(float(p), low_max, mid_max, high_max, low_min)
+    )
     latest[num_cols] = latest[num_cols].fillna(0)
 
     preds_docs: list[dict] = []
@@ -114,7 +120,7 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     top_n = 120
     rank_by_tier = {}
 
-    for tier in ["low", "mid", "high"]:
+    for tier in ["low", "mid", "high", "grail"]:
         df_t = scored[scored["tier"] == tier].copy()
         if df_t.empty:
             rank_by_tier[tier] = {"top_up": [], "top_down": []}
@@ -135,15 +141,17 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
             "low": rank_by_tier["low"],
             "mid": rank_by_tier["mid"],
             "high": rank_by_tier["high"],
+            "grail": rank_by_tier["grail"],
         },
         "meta": {
             "horizon_days": ml_artifact.horizon_days,
             "min_history_days": ml_artifact.min_history_days,
             "topN_per_tier": top_n,
             "tiers": {
-                "low": {"max": ml_artifact.low_max},
-                "mid": {"max": ml_artifact.mid_max},
-                "high": {"min_exclusive": ml_artifact.mid_max},
+                "low": {"min_inclusive": low_min, "max_exclusive": low_max},
+                "mid": {"min_inclusive": low_max, "max_inclusive": mid_max},
+                "high": {"min_exclusive": mid_max, "max_exclusive": high_max},
+                "grail": {"min_inclusive": high_max},
             },
         },
     }

@@ -130,7 +130,15 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
     train_df["clusterId"] = train_df["id"].map(cluster_map)
     log_step("fit_clusters done")
 
-    train_df["tier"] = train_df["price"].apply(lambda p: assign_tier(float(p), ml.low_max, ml.mid_max))
+    train_df["tier"] = train_df["price"].apply(
+        lambda p: assign_tier(
+            float(p),
+            ml.low_max,
+            ml.mid_max,
+            ml.high_max,
+            ml.low_min,
+        )
+    )
 
     cat_cols = [
         "rarityName", "rarityId", "printing", "color_1",
@@ -152,7 +160,7 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
     train_df[num_cols] = train_df[num_cols].fillna(0)
 
     tier_models: dict[str, TierModels] = {}
-    for tier in ["low", "mid", "high"]:
+    for tier in ["low", "mid", "high", "grail"]:
         df_t = train_df[train_df["tier"] == tier].copy()
         if len(df_t) < 200:
             continue
