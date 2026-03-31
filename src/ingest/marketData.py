@@ -30,8 +30,13 @@ if __name__ == "__main__":
 
         ids = []
 
-        touched, updated = update_cards_market_data(db, days_back=477, limit_ids=ids)
+        touched, updated, sets_touched, sets_updated = update_cards_market_data(
+            db,
+            days_back=477,
+            limit_ids=ids,
+        )
         print(f"Cards: {touched}, updated: {updated}")
+        print(f"Sets: {sets_touched}, updated: {sets_updated}")
 
         # Timer end
         end_time = time.time()
