@@ -1,0 +1,371 @@
+[
+  {
+    "schemaVersion": 1,
+    "setId": "OP13",
+    "baseSetCode": "OP13",
+    "language": "en",
+    "name": "Carrying On His Will",
+    "status": "estimated",
+    "packaging": {
+      "packsPerBox": 24,
+      "cardsPerPack": 12,
+      "boxesPerCase": 12
+    },
+    "classification": {
+      "notes": [
+        "Bucket model intentionally separates core EV buckets from anniversary jackpots.",
+        "Use core EV for stable box economics; use full EV only when including ultra-rare chase outcomes.",
+        "For OP13, Red Super Parallel and God Pack style hits should not be mixed into a conservative EV baseline."
+      ],
+      "coreEvIncludeKeys": [
+        "sr_base",
+        "sr_parallel",
+        "sec_base",
+        "sec_parallel",
+        "leader_parallel"
+      ],
+      "fullEvIncludeKeys": [
+        "sr_base",
+        "sr_parallel",
+        "sec_base",
+        "sec_parallel",
+        "leader_parallel",
+        "sp",
+        "anniversary_special",
+        "gold_don",
+        "god_pack",
+        "red_super_parallel"
+      ]
+    },
+    "buckets": [
+      {
+        "key": "sr_base",
+        "label": "SR Base",
+        "kind": "base",
+        "classificationHint": "Cards whose base rarity is SR and that are not parallel or special anniversary treatments.",
+        "estimatedPerBox": {
+          "min": 4,
+          "max": 5,
+          "avg": 4.5,
+          "boxesPerHitMin": null,
+          "boxesPerHitMax": null
+        },
+        "estimatedPerCase": {
+          "min": 48,
+          "max": 60,
+          "avg": 54
+        },
+        "confidence": 0.7,
+        "includeInCoreEv": true,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-en-official", "community-jp-general", "op13-jp-estimated"],
+        "notes": [
+          "Community sources are aligned on roughly 4-5 SR per box."
+        ]
+      },
+      {
+        "key": "sr_parallel",
+        "label": "SR Parallel / Alt Art",
+        "kind": "parallel",
+        "classificationHint": "Parallel or alt-art versions of SR cards, excluding OP13 anniversary-only special buckets.",
+        "estimatedPerBox": {
+          "min": 0.33,
+          "max": 0.5,
+          "avg": 0.4,
+          "boxesPerHitMin": 2,
+          "boxesPerHitMax": 3
+        },
+        "estimatedPerCase": {
+          "min": 4,
+          "max": 6,
+          "avg": 4.8
+        },
+        "confidence": 0.45,
+        "includeInCoreEv": true,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-jp-estimated"],
+        "notes": [
+          "Estimated from OP13-specific JP opening summaries; treat as provisional."
+        ]
+      },
+      {
+        "key": "sec_base",
+        "label": "SEC Base",
+        "kind": "base",
+        "classificationHint": "Non-parallel Secret Rare cards.",
+        "estimatedPerBox": {
+          "min": 0.5,
+          "max": 1,
+          "avg": 0.75,
+          "boxesPerHitMin": 1,
+          "boxesPerHitMax": 2
+        },
+        "estimatedPerCase": {
+          "min": 6,
+          "max": 12,
+          "avg": 9
+        },
+        "confidence": 0.5,
+        "includeInCoreEv": true,
+        "includeInFullEv": true,
+        "sourceIds": ["community-jp-general", "op13-jp-estimated"],
+        "notes": [
+          "Generic community expectation is 0-1 SEC per box; OP13-specific estimate narrows to roughly 1 per 1-2 boxes."
+        ]
+      },
+      {
+        "key": "sec_parallel",
+        "label": "SEC Parallel",
+        "kind": "parallel",
+        "classificationHint": "Parallel Secret Rares excluding Red Super Parallel and other explicitly separated jackpot buckets.",
+        "estimatedPerBox": {
+          "min": 0.17,
+          "max": 0.25,
+          "avg": 0.2,
+          "boxesPerHitMin": 4,
+          "boxesPerHitMax": 6
+        },
+        "estimatedPerCase": {
+          "min": 2,
+          "max": 3,
+          "avg": 2.4
+        },
+        "confidence": 0.4,
+        "includeInCoreEv": true,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-jp-estimated"],
+        "notes": [
+          "Low-confidence estimate from OP13-specific community summaries."
+        ]
+      },
+      {
+        "key": "leader_parallel",
+        "label": "Leader Parallel",
+        "kind": "leader_parallel",
+        "classificationHint": "Parallel leaders, excluding god-pack-only bundles if those are modeled separately.",
+        "estimatedPerBox": {
+          "min": 0.17,
+          "max": 0.33,
+          "avg": 0.25,
+          "boxesPerHitMin": 3,
+          "boxesPerHitMax": 6
+        },
+        "estimatedPerCase": {
+          "min": 2,
+          "max": 4,
+          "avg": 3
+        },
+        "confidence": 0.25,
+        "includeInCoreEv": true,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-case-reddit", "op13-case-youtube"],
+        "notes": [
+          "Very provisional. Community posts suggest leader parallel distribution is case-mapped in OP13."
+        ]
+      },
+      {
+        "key": "sp",
+        "label": "SP / Super Parallel",
+        "kind": "special",
+        "classificationHint": "OP13 super parallel or SP chase cards not already covered by anniversary-specific or Red Super Parallel buckets.",
+        "estimatedPerBox": {
+          "min": 0.0125,
+          "max": 0.02,
+          "avg": 0.015,
+          "boxesPerHitMin": 50,
+          "boxesPerHitMax": 80
+        },
+        "estimatedPerCase": {
+          "min": 0.15,
+          "max": 0.24,
+          "avg": 0.18
+        },
+        "confidence": 0.35,
+        "includeInCoreEv": false,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-jp-estimated"],
+        "notes": [
+          "Included only in full EV because one-box economics are highly skewed by these hits."
+        ]
+      },
+      {
+        "key": "anniversary_special",
+        "label": "3rd Anniversary Special",
+        "kind": "anniversary",
+        "classificationHint": "3rd Anniversary special cards such as Gold/Silver Shanks-style inserts.",
+        "estimatedPerBox": {
+          "min": 0.0042,
+          "max": 0.0083,
+          "avg": 0.006,
+          "boxesPerHitMin": 120,
+          "boxesPerHitMax": 240
+        },
+        "estimatedPerCase": {
+          "min": 0.05,
+          "max": 0.1,
+          "avg": 0.07
+        },
+        "confidence": 0.3,
+        "includeInCoreEv": false,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-jp-estimated"],
+        "notes": [
+          "Use as a jackpot bucket, not as part of a realistic baseline EV."
+        ]
+      },
+      {
+        "key": "gold_don",
+        "label": "Gold DON",
+        "kind": "insert",
+        "classificationHint": "Gold DON or equivalent premium DON insert tracked independently from standard parallel hits.",
+        "estimatedPerBox": {
+          "min": 0.08,
+          "max": 0.17,
+          "avg": 0.125,
+          "boxesPerHitMin": 6,
+          "boxesPerHitMax": 12
+        },
+        "estimatedPerCase": {
+          "min": 1,
+          "max": 2,
+          "avg": 1.5
+        },
+        "confidence": 0.2,
+        "includeInCoreEv": false,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-hit-rates-reddit"],
+        "notes": [
+          "Derived from English case-opening community posts; keep confidence low."
+        ]
+      },
+      {
+        "key": "god_pack",
+        "label": "God Pack / Demon Pack",
+        "kind": "god_pack",
+        "classificationHint": "Boxes or packs that replace normal hit structure with a bundled ultra-rare package.",
+        "estimatedPerBox": {
+          "min": 0.0042,
+          "max": 0.0083,
+          "avg": 0.006,
+          "boxesPerHitMin": 120,
+          "boxesPerHitMax": 240
+        },
+        "estimatedPerCase": {
+          "min": 0.05,
+          "max": 0.1,
+          "avg": 0.07
+        },
+        "confidence": 0.3,
+        "includeInCoreEv": false,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-jp-estimated", "op13-case-reddit"],
+        "notes": [
+          "OP13 introduces a Demon Pack/God Pack style outcome according to multiple community sources."
+        ]
+      },
+      {
+        "key": "red_super_parallel",
+        "label": "Red Super Parallel",
+        "kind": "case_hit",
+        "classificationHint": "OP13-exclusive red super parallel bucket for Luffy/Ace/Sabo anniversary chase cards.",
+        "estimatedPerBox": {
+          "min": 0.0042,
+          "max": 0.005,
+          "avg": 0.0045,
+          "boxesPerHitMin": 200,
+          "boxesPerHitMax": 240
+        },
+        "estimatedPerCase": {
+          "min": 0.05,
+          "max": 0.06,
+          "avg": 0.054
+        },
+        "confidence": 0.35,
+        "includeInCoreEv": false,
+        "includeInFullEv": true,
+        "sourceIds": ["op13-jp-estimated"],
+        "notes": [
+          "Treat this as any Red Super Parallel, not a specific character.",
+          "This is the cleanest way to avoid tripling scarcity by incorrectly modeling each card independently."
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "op13-en-official",
+        "type": "official",
+        "url": "https://en.onepiece-cardgame.com/products/boosters/op13.php",
+        "title": "BOOSTER PACK -CARRYING ON HIS WILL- [OP-13] - Official EN",
+        "region": "EN",
+        "language": "en",
+        "reliability": "high",
+        "notes": "Official product page for release timing and rarity composition, not pull rates."
+      },
+      {
+        "id": "op13-jp-official",
+        "type": "official",
+        "url": "https://www.onepiece-cardgame.com/products/boosters/op13.php",
+        "title": "ブースターパック 受け継がれる意志 [OP-13] - Official JP",
+        "region": "JP",
+        "language": "jp",
+        "reliability": "high",
+        "notes": "Official JP product page for release timing and rarity composition, not pull rates."
+      },
+      {
+        "id": "community-jp-general",
+        "type": "community",
+        "url": "https://cardcosmos.de/en/blogs/news/one-piece-card-game-pull-rates-hitrates-der-japanischen-edition",
+        "title": "One Piece Card Game – Pull Rates & Hit Rates of the Japanese Edition",
+        "region": "JP",
+        "language": "en",
+        "reliability": "medium",
+        "notes": "Generic unofficial community summary: SR 4-5, SEC 0-1, parallels 1-2 per display, manga 0-1 per case."
+      },
+      {
+        "id": "op13-jp-estimated",
+        "type": "community",
+        "url": "https://samuraiswordtokyo.com/es/blogs/news/op-13-pull-rates-best-cards",
+        "title": "OP-13 Pull Rates Best Cards",
+        "region": "JP",
+        "language": "en",
+        "reliability": "low",
+        "notes": "Commercial article, but it provides OP13-specific estimated pull-rate ranges and explicitly states rates are community-derived."
+      },
+      {
+        "id": "op13-case-youtube",
+        "type": "video",
+        "url": "https://www.youtube.com/watch?v=Hg33k6F5Pio",
+        "title": "OP-13 THREE BROTHER Case Study: Analyzing Pull Rates from a $400 Case",
+        "region": "JP",
+        "language": "en",
+        "reliability": "low",
+        "notes": "Useful as case-opening evidence, but should be aggregated with other sources before being promoted above low confidence."
+      },
+      {
+        "id": "op13-case-reddit",
+        "type": "community",
+        "url": "https://www.reddit.com/r/OnePieceTCGFinance/comments/1p2ztma/op13_case_pulls/",
+        "title": "OP13 Case Pulls",
+        "region": "EN",
+        "language": "en",
+        "reliability": "low",
+        "notes": "English case-opening discussion; useful for coarse case-hit pattern signals only."
+      },
+      {
+        "id": "op13-hit-rates-reddit",
+        "type": "community",
+        "url": "https://www.reddit.com/r/OnePieceTCGFinance/comments/1okrfoo/op13_hit_rates/",
+        "title": "OP13 hit rates?",
+        "region": "EN",
+        "language": "en",
+        "reliability": "low",
+        "notes": "Community estimates for gold DON, leader parallels and case-mapped anniversary anomalies."
+      }
+    ],
+    "notes": [
+      "This seed does not change EV logic yet. It is a data model preparation step only.",
+      "All pull rates remain unofficial. Official Bandai sources define product composition but not exact hit odds."
+    ],
+    "updatedAt": "2026-03-31T12:00:00Z"
+  }
+]

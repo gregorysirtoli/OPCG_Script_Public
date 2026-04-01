@@ -1,7 +1,9 @@
 from __future__ import annotations
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import exp, log1p, sqrt, tanh
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from pymongo import UpdateOne
@@ -11,6 +13,32 @@ GRADING_FEES = 30
 SET_TREND_DAYS = 90
 SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
 SET_TOP_BASE_PRICE = 20.0
+SET_PULL_RATES_SEED_PATH = Path(__file__).resolve().parents[2] / "docs" / "set_pull_rates.seed.json"
+
+
+def _load_pull_rate_seed() -> Dict[Tuple[str, str], Dict[str, Any]]:
+    try:
+        raw = json.loads(SET_PULL_RATES_SEED_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    if not isinstance(raw, list):
+        return out
+    for doc in raw:
+        if not isinstance(doc, dict):
+            continue
+        set_id = doc.get("setId")
+        language = doc.get("language")
+        if isinstance(set_id, str) and isinstance(language, str):
+            out[(set_id.upper(), language.lower())] = doc
+        base_set_code = doc.get("baseSetCode")
+        if isinstance(base_set_code, str) and isinstance(language, str):
+            out[(base_set_code.upper(), language.lower())] = doc
+    return out
+
+
+PULL_RATE_SEED = _load_pull_rate_seed()
 
 def _clamp(n: Optional[float], low: float, high: float) -> Optional[float]:
     if n is None:
@@ -281,6 +309,165 @@ def _infer_pack_divisor(set_doc: Dict[str, Any]) -> int:
     if language == "jp":
         return 12
     return 12 if set_id.endswith("JP") else 24
+
+
+def _normalize_set_language(set_doc: Dict[str, Any]) -> str:
+    language = str(set_doc.get("language") or "").lower()
+    if language in ("en", "jp"):
+        return language
+    set_id = str(set_doc.get("id") or "").upper()
+    return "jp" if set_id.endswith("JP") else "en"
+
+
+def _get_pull_rate_model(set_doc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    set_id = str(set_doc.get("id") or "").upper()
+    language = _normalize_set_language(set_doc)
+    base_set_code = set_id[:-2] if set_id.endswith("JP") else set_id
+    return (
+        PULL_RATE_SEED.get((set_id, language))
+        or PULL_RATE_SEED.get((base_set_code, language))
+    )
+
+
+def _classify_pull_rate_bucket(set_doc: Dict[str, Any], card_doc: Dict[str, Any]) -> Optional[str]:
+    rarity = str(card_doc.get("rarityName") or card_doc.get("rarity") or "").strip().lower()
+    name = str(card_doc.get("name") or "").strip().lower()
+    local_id = str(card_doc.get("localId") or "").strip().lower()
+    card_id = str(card_doc.get("id") or "").strip().lower()
+    color_values = [v.lower() for v in _norm_to_list(card_doc.get("color"))]
+    alternate = card_doc.get("alternate")
+    is_parallel = bool(alternate) or "alternate art" in name or "[aa]" in name or "parallel" in name
+
+    is_don = "don" in name or local_id.startswith("don")
+    if is_don and "gold" in name:
+        return "gold_don"
+
+    if "manga" in name:
+        return "red_super_parallel" if str(set_doc.get("id") or "").upper().startswith("OP13") else "sp"
+
+    if str(set_doc.get("id") or "").upper().startswith("OP13"):
+        if any(token in name for token in ("3rd anniversary", "3rd anniv", "anniversary")):
+            return "anniversary_special"
+        if is_parallel and any(token in name for token in ("super parallel", "sp")):
+            return "sp"
+        if is_parallel and any(token in name for token in ("luffy", "ace", "sabo")) and "red" in color_values:
+            return "red_super_parallel"
+
+    if "leader" in rarity:
+        return "leader_parallel" if is_parallel else None
+    if "secret rare" in rarity or rarity == "sec":
+        return "sec_parallel" if is_parallel else "sec_base"
+    if "super rare" in rarity or rarity == "sr":
+        return "sr_parallel" if is_parallel else "sr_base"
+
+    if is_parallel and any(token in card_id for token in ("god", "demon")):
+        return "god_pack"
+
+    return None
+
+
+def _build_pull_rate_ev(
+    set_doc: Dict[str, Any],
+    priced_rows: List[Dict[str, Any]],
+    booster_box_price: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    model = _get_pull_rate_model(set_doc)
+    if not model:
+        return None
+
+    bucket_prices: Dict[str, List[float]] = {}
+    classified_count = 0
+    unclassified_priced = 0
+    for row in priced_rows:
+        price = row.get("price")
+        if price is None or price <= 0:
+            continue
+        bucket = _classify_pull_rate_bucket(set_doc, row["doc"])
+        if bucket:
+            bucket_prices.setdefault(bucket, []).append(price)
+            classified_count += 1
+        else:
+            unclassified_priced += 1
+
+    bucket_values: Dict[str, Dict[str, Any]] = {}
+    expected_core = 0.0
+    realistic_core = 0.0
+    expected_full = 0.0
+    realistic_full = 0.0
+
+    for bucket in model.get("buckets", []):
+        if not isinstance(bucket, dict):
+            continue
+        key = bucket.get("key")
+        if not isinstance(key, str):
+            continue
+        prices = sorted(bucket_prices.get(key, []))
+        exp_price = _safe_round2(_quantile(prices, 0.4)) if prices else 0.0
+        real_price = _safe_round2(_quantile(prices, 0.5)) if prices else 0.0
+        avg_per_box = _to_number(((bucket.get("estimatedPerBox") or {}).get("avg")))
+        if avg_per_box is None:
+            min_per_box = _to_number(((bucket.get("estimatedPerBox") or {}).get("min")))
+            max_per_box = _to_number(((bucket.get("estimatedPerBox") or {}).get("max")))
+            if min_per_box is not None and max_per_box is not None:
+                avg_per_box = (min_per_box + max_per_box) / 2.0
+            else:
+                avg_per_box = 0.0
+
+        expected_contribution = _safe_round2(avg_per_box * exp_price)
+        realistic_contribution = _safe_round2(avg_per_box * real_price)
+        include_core = bool(bucket.get("includeInCoreEv"))
+        include_full = bool(bucket.get("includeInFullEv"))
+
+        if include_core:
+            expected_core += expected_contribution
+            realistic_core += realistic_contribution
+        if include_full:
+            expected_full += expected_contribution
+            realistic_full += realistic_contribution
+
+        bucket_values[key] = {
+            "cards": len(prices),
+            "expectedPrice": exp_price,
+            "realisticPrice": real_price,
+            "avgPerBox": _safe_round2(avg_per_box),
+            "expectedContribution": expected_contribution,
+            "realisticContribution": realistic_contribution,
+            "includeInCoreEv": include_core,
+            "includeInFullEv": include_full,
+        }
+
+    total_priced = sum(1 for row in priced_rows if row.get("price") is not None and row.get("price") > 0)
+    classified_pct = _safe_round2((classified_count / total_priced) * 100.0) if total_priced else 0.0
+
+    realistic_core = _safe_round2(realistic_core)
+    expected_core = _safe_round2(expected_core)
+    realistic_full = _safe_round2(realistic_full)
+    expected_full = _safe_round2(expected_full)
+
+    roi_core = None
+    roi_full = None
+    if booster_box_price is not None and booster_box_price > 0:
+        roi_core = _safe_round2(((realistic_core - booster_box_price) / booster_box_price) * 100.0)
+        roi_full = _safe_round2(((realistic_full - booster_box_price) / booster_box_price) * 100.0)
+
+    return {
+        "modelSetId": model.get("setId"),
+        "modelLanguage": model.get("language"),
+        "status": model.get("status"),
+        "expectedValueCore": expected_core,
+        "realisticExpectedValueCore": realistic_core,
+        "expectedValueFull": expected_full,
+        "realisticExpectedValueFull": realistic_full,
+        "roiCore": roi_core,
+        "roiFull": roi_full,
+        "coverage": {
+            "pricedCards": total_priced,
+            "classifiedCards": classified_count,
+            "unclassifiedCards": unclassified_priced,
+            "classifiedPct": classified_pct,
+        },
+        "bucketValues": bucket_values,
+    }
 
 def _calc_pct_change(now: Optional[float], base: Optional[float]) -> Optional[float]:
     if now is None or base is None or base == 0:
@@ -727,6 +914,12 @@ def _build_set_market_data(
     if booster_box_price is not None and booster_box_price > 0:
         roi = _safe_round2(((realistic_expected_value - booster_box_price) / booster_box_price) * 100.0)
 
+    pull_rate_ev = _build_pull_rate_ev(
+        set_doc=set_doc,
+        priced_rows=priced_rows,
+        booster_box_price=booster_box_price,
+    )
+
     cap_ultra_cheap = 0.12
     cap_cheap = 0.24
     cap_normal = 0.38
@@ -1040,6 +1233,13 @@ def _build_set_market_data(
         "expectedValue": expected_value,
         "realisticExpectedValue": realistic_expected_value,
         "roi": roi,
+        "*expectedValuePullRateCore": pull_rate_ev.get("expectedValueCore") if pull_rate_ev else None,
+        "*realisticExpectedValuePullRateCore": pull_rate_ev.get("realisticExpectedValueCore") if pull_rate_ev else None,
+        "*expectedValuePullRateFull": pull_rate_ev.get("expectedValueFull") if pull_rate_ev else None,
+        "*realisticExpectedValuePullRateFull": pull_rate_ev.get("realisticExpectedValueFull") if pull_rate_ev else None,
+        "*roiPullRateCore": pull_rate_ev.get("roiCore") if pull_rate_ev else None,
+        "*roiPullRateFull": pull_rate_ev.get("roiFull") if pull_rate_ev else None,
+        "*pullRateModel": pull_rate_ev,
         "volatility": volatility_score,
         "marketBreakdown": {
             "byColor": _finalize_buckets(color_map),

@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opcg-script-public.local/schemas/set-pull-rates.schema.json",
+  "title": "SetPullRates",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "setId",
+    "baseSetCode",
+    "language",
+    "packaging",
+    "classification",
+    "buckets",
+    "sources",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "setId": {
+      "type": "string"
+    },
+    "baseSetCode": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string",
+      "enum": ["en", "jp"]
+    },
+    "name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "estimated", "validated"]
+    },
+    "packaging": {
+      "type": "object",
+      "required": ["packsPerBox", "cardsPerPack"],
+      "properties": {
+        "packsPerBox": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cardsPerPack": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "boxesPerCase": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "classification": {
+      "type": "object",
+      "required": ["notes", "coreEvIncludeKeys", "fullEvIncludeKeys"],
+      "properties": {
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "coreEvIncludeKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fullEvIncludeKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "buckets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "kind",
+          "estimatedPerBox",
+          "confidence",
+          "includeInCoreEv",
+          "includeInFullEv"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "base",
+              "parallel",
+              "leader_parallel",
+              "special",
+              "anniversary",
+              "insert",
+              "case_hit",
+              "god_pack"
+            ]
+          },
+          "classificationHint": {
+            "type": "string"
+          },
+          "estimatedPerBox": {
+            "type": "object",
+            "required": ["min", "max"],
+            "properties": {
+              "min": {
+                "type": "number",
+                "minimum": 0
+              },
+              "max": {
+                "type": "number",
+                "minimum": 0
+              },
+              "avg": {
+                "type": ["number", "null"],
+                "minimum": 0
+              },
+              "boxesPerHitMin": {
+                "type": ["number", "null"],
+                "minimum": 0
+              },
+              "boxesPerHitMax": {
+                "type": ["number", "null"],
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "estimatedPerCase": {
+            "type": ["object", "null"],
+            "properties": {
+              "min": {
+                "type": "number",
+                "minimum": 0
+              },
+              "max": {
+                "type": "number",
+                "minimum": 0
+              },
+              "avg": {
+                "type": ["number", "null"],
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "includeInCoreEv": {
+            "type": "boolean"
+          },
+          "includeInFullEv": {
+            "type": "boolean"
+          },
+          "sourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "url", "title"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["official", "community", "retailer", "video", "aggregator"]
+          },
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "reliability": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
