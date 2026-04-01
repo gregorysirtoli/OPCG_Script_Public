@@ -1196,7 +1196,7 @@ def update_cards_market_data(
     coll_prices = db["Prices"]
 
     q_cards: Dict[str, Any] = {}
-    q_cards["setId"] = "OP13"
+    #q_cards["setId"] = "OP13"
     if limit_ids:
         q_cards["id"] = {"$in": limit_ids}
 
