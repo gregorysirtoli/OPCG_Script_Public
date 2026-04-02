@@ -4,13 +4,31 @@ from datetime import datetime, timedelta, timezone
 from math import exp, log1p, sqrt, tanh
 from typing import Any, Dict, List, Optional, Tuple
 
-from pymongo import UpdateOne
+from pymongo import InsertOne, UpdateOne
 from pymongo.database import Database
 
 GRADING_FEES = 30
 SET_TREND_DAYS = 90
 SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
 SET_TOP_BASE_PRICE = 20.0
+SET_MARKET_HISTORY_COLLECTION = "SetsMarketData"
+SET_MARKET_HISTORY_FIELDS = (
+    "cardsCount",
+    "otherTypesCount",
+    "totalCount",
+    "totalCardsPrice",
+    "totalOtherTypesPrice",
+    "totalPrice",
+    "psa10CardsCount",
+    "psa10TotalPrice",
+    "bgs10CardsCount",
+    "bgs10TotalPrice",
+    "profitableCards",
+    "expectedValue",
+    "realisticExpectedValue",
+    "roi",
+    "volatility",
+)
 
 def _clamp(n: Optional[float], low: float, high: float) -> Optional[float]:
     if n is None:
@@ -1060,6 +1078,24 @@ def _build_set_market_data(
     }
 
 
+def _build_set_market_history_snapshot(
+    set_doc: Dict[str, Any],
+    market_data: Dict[str, Any],
+    captured_at: datetime,
+) -> Dict[str, Any]:
+    snapshot = {
+        field: market_data.get(field)
+        for field in SET_MARKET_HISTORY_FIELDS
+    }
+    snapshot["setId"] = set_doc.get("id")
+    snapshot["language"] = set_doc.get("language")
+    snapshot["sealedId"] = set_doc.get("sealedId")
+    snapshot["date"] = captured_at.date().isoformat()
+    snapshot["sourceUpdatedAt"] = market_data.get("updatedAt")
+    snapshot["createdAt"] = captured_at
+    return snapshot
+
+
 def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]:
     if not set_ids:
         return (0, 0)
@@ -1067,6 +1103,7 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
     coll_sets = db["Sets"]
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
+    coll_history = db[SET_MARKET_HISTORY_COLLECTION]
 
     sets = list(
         coll_sets.find(
@@ -1078,6 +1115,28 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
         return (0, 0)
 
     set_id_list = [s["id"] for s in sets if isinstance(s.get("id"), str)]
+    now_utc = datetime.now(timezone.utc)
+    today_start_utc = datetime(
+        now_utc.year,
+        now_utc.month,
+        now_utc.day,
+        tzinfo=timezone.utc,
+    )
+    tomorrow_start_utc = today_start_utc + timedelta(days=1)
+    existing_history_set_ids = {
+        doc["setId"]
+        for doc in coll_history.find(
+            {
+                "setId": {"$in": set_id_list},
+                "createdAt": {
+                    "$gte": today_start_utc,
+                    "$lt": tomorrow_start_utc,
+                },
+            },
+            {"_id": 0, "setId": 1},
+        )
+        if isinstance(doc.get("setId"), str)
+    }
     items_by_set: Dict[str, List[Dict[str, Any]]] = {set_id: [] for set_id in set_id_list}
 
     for item in coll_cards.find(
@@ -1158,6 +1217,7 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
             )
 
     ops: List[UpdateOne] = []
+    history_ops: List[InsertOne] = []
     touched = 0
     updated = 0
     for set_doc in sets:
@@ -1179,10 +1239,20 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
                 {"$set": {"marketData": market_data}},
             )
         )
+        if set_id not in existing_history_set_ids:
+            captured_at = datetime.now(timezone.utc)
+            history_snapshot = _build_set_market_history_snapshot(
+                set_doc=set_doc,
+                market_data=market_data,
+                captured_at=captured_at,
+            )
+            history_ops.append(InsertOne(history_snapshot))
 
     if ops:
         res = coll_sets.bulk_write(ops, ordered=False)
         updated = (res.modified_count or 0) + (res.upserted_count or 0)
+    if history_ops:
+        coll_history.bulk_write(history_ops, ordered=False)
 
     return (touched, updated)
 
