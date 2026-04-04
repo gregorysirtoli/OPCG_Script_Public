@@ -1,13 +1,15 @@
 name: Run MarketData
 
 on:
-  workflow_dispatch: # esecuzione manuale
-  schedule:
-    # esecuzione giornaliera alle 19:00 Europe/Rome quando è CEST
-    - cron: "0 17 * * *" # CEST (UTC+2) → 17:00 UTC = 19:00 IT
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Run Ingestor"]
+    types:
+      - completed
 
 jobs:
   update-market-data:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
 
     env:
