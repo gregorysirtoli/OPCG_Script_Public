@@ -87,7 +87,7 @@ def build_tierlist(
     db,
     set_ids: List[str],
     market: str = "en",
-    only_verified_visible: bool = True
+    only_visible: bool = True
 ) -> Tuple[dict, List[dict]]:
     tiers = {"S": [], "A+": [], "A": [], "B": [], "C": []}
     report_rows: List[dict] = []
@@ -116,9 +116,8 @@ def build_tierlist(
 
         # Query carte
         q = {"setId": set_id, "type": "Cards"}
-        if only_verified_visible:
+        if only_visible:
             q["visible"] = True
-            q["verified"] = True
 
         card_docs = list(cards_col.find(q, {"id": 1, "marketData": 1}))
 
@@ -235,10 +234,10 @@ if __name__ == "__main__":
         OP_IDS_EN = [
             "OP01", "OP02", "OP03", "OP04", "OP05", "OP06",
             "OP07", "OP08", "OP09", "OP10", "OP11", "OP12",
-            "OP13", "OP14", "EB01", "EB02", "EB03", "PRB01", "PRB02"
+            "OP13", "OP14", "OP15", "EB01", "EB02", "EB03", "PRB01", "PRB02"
         ]
 
-        tiers_en, report_en = build_tierlist(db, OP_IDS_EN, market="en", only_verified_visible=True)
+        tiers_en, report_en = build_tierlist(db, OP_IDS_EN, market="en", only_visible=True)
 
         # ✅ SALVATAGGIO con output identico al JSON che vuoi
         db.Tierlist.delete_many({"language": "en"})
@@ -253,10 +252,10 @@ if __name__ == "__main__":
         OP_IDS_JP = [
             "OP01JP", "OP02JP", "OP03JP", "OP04JP", "OP05JP", "OP06JP",
             "OP07JP", "OP08JP", "OP09JP", "OP10JP", "OP11JP", "OP12JP",
-            "OP13JP", "OP14JP", "EB01JP", "EB02JP", "EB03JP", "PRB01JP", "PRB02JP"
+            "OP13JP", "OP14JP", "OP15JP", "EB01JP", "EB02JP", "EB03JP", "PRB01JP", "PRB02JP"
         ]
 
-        tiers_jp, report_jp = build_tierlist(db, OP_IDS_JP, market="jp", only_verified_visible=True)
+        tiers_jp, report_jp = build_tierlist(db, OP_IDS_JP, market="jp", only_visible=True)
 
         # ✅ SALVATAGGIO con output identico al JSON che vuoi
         db.Tierlist.delete_many({"language": "jp"})
