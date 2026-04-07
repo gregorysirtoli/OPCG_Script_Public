@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import traceback
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -63,6 +64,8 @@ def partition_ok(mongo_id: Any, shard_idx: int, shard_total: int) -> bool:
 def main() -> int:
     settings = load_settings()
     args = parse_args()
+    start_time = time.time()
+    start_dt = datetime.now()
 
     logger.info("=== Start Ingestor ===")
 
@@ -302,9 +305,21 @@ def main() -> int:
         finally:
             rows_batch.clear()
 
+    end_time = time.time()
+    end_dt = datetime.now()
+    elapsed = end_time - start_time
+    minutes = elapsed / 60.0
+
     summary = f"Inserted: {inserted} / Scanned: {total}"
     logger.info(summary)
-    send_email(os.getenv("MAIL_SUBJECT", "[PRICE] Report"), summary)
+    body = (
+        f"Start: {start_dt:%Y-%m-%d %H:%M:%S}\n"
+        f"End:   {end_dt:%Y-%m-%d %H:%M:%S}\n"
+        f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)\n"
+        f"Inserted: {inserted}\n"
+        f"Scanned: {total}"
+    )
+    send_email("✅ [1/5][WORKFLOW] Prices Ingestor", body)
 
     if secondary_alerts:
         lines = ["<b>PriceCharting URL issues detected:</b><br><br>"]
@@ -340,4 +355,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:
+        send_email("🚫 [1/5][WORKFLOW] Prices Ingestor", traceback.format_exc())
+        raise

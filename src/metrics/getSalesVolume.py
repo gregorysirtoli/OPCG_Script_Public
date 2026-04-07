@@ -310,11 +310,11 @@ def main() -> int:
             upsert_sales_volume_weekly(db, weekly_data)
             summary += f"\n[SalesVolumeWeekly] Upserted {weekly_data}"
 
-        send_email("[WORKFLOW] Sales Volume Report", summary)
+        send_email("✅ [4/5][WORKFLOW] Sales Volume", summary)
         return 0
 
     except Exception:
-        send_email("[WORKFLOW][ERROR] Sales Volume Report", traceback.format_exc())
+        send_email("🚫 [4/5][WORKFLOW] Sales Volume", traceback.format_exc())
         raise
 
 

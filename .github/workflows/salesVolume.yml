@@ -1,12 +1,15 @@
 name: Run Sales Volume
 
 on:
-  workflow_dispatch: # esecuzione manuale
-  schedule: # esecuzione giornaliera Europe/Rome (con DST)
-    - cron: "10 23 * * *"
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Run Tierlist"]
+    types:
+      - completed
 
 jobs:
   run-sales-volume:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
 
     env:

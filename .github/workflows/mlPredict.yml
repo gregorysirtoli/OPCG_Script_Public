@@ -2,11 +2,14 @@
 
 on:
   workflow_dispatch:
-  schedule: # daily Europe/Rome (CET/CEST)
-    - cron: "0 5 * * *" # 05:00 UTC = 06:00 CET / 07:00 CEST
+  workflow_run:
+    workflows: ["Run Sales Volume"]
+    types:
+      - completed
 
 jobs:
   predict-and-store:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
 
     env:

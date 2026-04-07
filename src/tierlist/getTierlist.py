@@ -266,8 +266,8 @@ if __name__ == "__main__":
         })
 
         print("\n✅ [END] Fine processo creazione tierlist.")
-        send_email("✅ [WORKFLOW] Tierlist Report]", "")
+        send_email("✅ [3/5][WORKFLOW] Tierlist", "")
 
     except Exception:
-        send_email("🚫 [WORKFLOW] Tierlist Report]", traceback.format_exc())
+        send_email("🚫 [3/5][WORKFLOW] Tierlist", traceback.format_exc())
         raise

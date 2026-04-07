@@ -31,8 +31,8 @@ if __name__ == "__main__":
             f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)"
         )
 
-        send_email("✅ [WORKFLOW] Predict Report", body)
+        send_email("✅ [5/5][WORKFLOW] ML Predict", body)
 
     except Exception:
-        send_email("🚫 [WORKFLOW] Predict Report", traceback.format_exc())
+        send_email("🚫 [5/5][WORKFLOW] ML Predict", traceback.format_exc())
         raise
