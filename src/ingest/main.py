@@ -336,7 +336,7 @@ def main() -> int:
             lines.append(f"<b>requestedUrl:</b> {alert.get('requestedUrl') or '-'}")
             lines.append(f"<b>finalUrl:</b> {alert.get('finalUrl') or '-'}")
             lines.append("<br><hr><br>")
-        send_email("[PRICE] URL issues", "<br>".join(lines))
+        send_email("🚫 [1/5][WORKFLOW] PriceCharting URL issues detected", "<br>".join(lines))
 
     # log su collection Logs
     try:
