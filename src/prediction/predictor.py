@@ -20,10 +20,11 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
 
     artifacts = joblib.load(f"{artifacts_dir}/optcg_quantile_artifacts.joblib")
     ml_artifact = artifacts.get("ml_config", ml)
-    low_min = getattr(ml_artifact, "low_min", 0.5)
-    low_max = getattr(ml_artifact, "low_max", 10.0)
-    mid_max = getattr(ml_artifact, "mid_max", 100.0)
-    high_max = getattr(ml_artifact, "high_max", 750.0)
+    low_min = getattr(ml_artifact, "low_min", 1.0)
+    low_max = getattr(ml_artifact, "low_max", 15.0)
+    mid_max = getattr(ml_artifact, "mid_max", 150.0)
+    high_max = getattr(ml_artifact, "high_max", 550.0)
+    grail_max = getattr(ml_artifact, "grail_max", 10000.0)
     tier_models = artifacts["tier_models"]
     cluster_pipe = artifacts["cluster_pipe"]
     cat_cols = artifacts["cat_cols"]
@@ -73,7 +74,7 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     ).values
 
     latest["tier"] = latest["price"].apply(
-        lambda p: assign_tier(float(p), low_max, mid_max, high_max, low_min)
+        lambda p: assign_tier(float(p), low_max, mid_max, high_max, grail_max, low_min)
     )
     latest[num_cols] = latest[num_cols].fillna(0)
 
@@ -151,7 +152,7 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
                 "low": {"min_inclusive": low_min, "max_exclusive": low_max},
                 "mid": {"min_inclusive": low_max, "max_inclusive": mid_max},
                 "high": {"min_exclusive": mid_max, "max_exclusive": high_max},
-                "grail": {"min_inclusive": high_max},
+                "grail": {"min_inclusive": high_max, "max_inclusive": grail_max},
             },
         },
     }

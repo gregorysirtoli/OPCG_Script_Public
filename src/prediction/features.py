@@ -26,8 +26,9 @@ def assign_tier(
     price: float,
     low_max: float,
     mid_max: float,
-    high_max: float = 750.0,
-    low_min: float = 0.5,
+    high_max: float = 550.0,
+    grail_max: float = 10000.0,
+    low_min: float = 1.0,
 ) -> str:
     # Prezzi molto bassi restano nel bucket low per evitare tier vuoti/non previsti.
     if price < low_min:
@@ -38,4 +39,6 @@ def assign_tier(
         return "mid"
     if price < high_max:
         return "high"
+    if price <= grail_max:
+        return "grail"
     return "grail"

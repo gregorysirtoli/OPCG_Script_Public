@@ -136,6 +136,7 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
             ml.low_max,
             ml.mid_max,
             ml.high_max,
+            ml.grail_max,
             ml.low_min,
         )
     )
