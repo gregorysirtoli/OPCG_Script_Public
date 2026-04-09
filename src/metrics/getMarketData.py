@@ -447,7 +447,54 @@ def _effective_price_from_snapshot(doc: Optional[Dict[str, Any]]) -> Optional[fl
         return _safe_round2(low)
     return None
 
-def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dict[str, Any]) -> Dict[str, Any]:
+
+def _extract_latest_and_previous_numeric(
+    docs: List[Dict[str, Any]],
+    field: str,
+) -> Tuple[Optional[float], Optional[float]]:
+    latest: Optional[float] = None
+    previous: Optional[float] = None
+    for doc in docs:
+        value = _to_number(doc.get(field))
+        if value is None:
+            continue
+        if latest is None:
+            latest = value
+            continue
+        previous = value
+        break
+    return latest, previous
+
+
+def _pick_baseline_value_around(
+    docs: List[Dict[str, Any]],
+    field: str,
+    target_dt: datetime,
+    max_days: float,
+) -> Optional[float]:
+    docs_with_value = [doc for doc in docs if _to_number(doc.get(field)) is not None]
+    if not docs_with_value:
+        return None
+    baseline_doc = _get_closest_around(docs_with_value, target_dt, max_days=max_days)
+    if not baseline_doc:
+        return None
+    return _to_number(baseline_doc.get(field))
+
+
+def _extract_grade10_total_count(doc: Dict[str, Any]) -> Optional[float]:
+    if not isinstance(doc, dict):
+        return None
+    grade10 = doc.get("grade10")
+    if not isinstance(grade10, dict):
+        return None
+    return _to_number(grade10.get("totalCount"))
+
+def compute_market_data_for_item(
+    prices: List[Dict[str, Any]],
+    graded_first: Dict[str, Any],
+    psa10_count: Optional[float],
+    psa10_count_previous: Optional[float],
+) -> Dict[str, Any]:
     latest = prices[0] if prices else None
 
     # Current series (USD)
@@ -515,8 +562,21 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
         low_vs_trend_discount_pct = None
 
     # graded (USD)
-    psa10_usd = _to_number(graded_first.get("psa10"))
-    bsg10_usd = _to_number(graded_first.get("bsg10"))  # error: from "bsg10" to "bgs10", i'm tard!
+    latest_psa10_usd, prev_psa10_usd = _extract_latest_and_previous_numeric(prices, "psa10")
+    latest_bsg10_usd, _ = _extract_latest_and_previous_numeric(prices, "bsg10")
+
+    psa10_usd = latest_psa10_usd if latest_psa10_usd is not None else _to_number(graded_first.get("psa10"))
+    bsg10_usd = latest_bsg10_usd if latest_bsg10_usd is not None else _to_number(graded_first.get("bsg10"))
+
+    psa10_30d_usd = _pick_baseline_value_around(
+        prices,
+        "psa10",
+        now - timedelta(days=30),
+        max_days=7,
+    )
+
+    psa10_percentage_change_30d = _calc_pct_change(psa10_usd, psa10_30d_usd)
+    psa10_count_percentage_change = _calc_pct_change(psa10_count, psa10_count_previous)
 
     # gradingProfit percent (%)
     if s.price_now_usd:
@@ -558,6 +618,10 @@ def compute_market_data_for_item(prices: List[Dict[str, Any]], graded_first: Dic
 
         "psa10": _as_number_or_none(psa10_usd), # USD
         "bgs10": _as_number_or_none(bsg10_usd), # USD
+        "psa10Count": _as_number_or_none(psa10_count),
+
+        "psa10PercentageChange30d": psa10_percentage_change_30d, # %
+        "psa10CountPercentageChange": psa10_count_percentage_change, # %
 
         "gradingProfitPsa10": gp_psa10, # %
         "gradingProfitBsg10": gp_bsg10, # %
@@ -1264,6 +1328,7 @@ def update_cards_market_data(
 ) -> Tuple[int, int, int, int]:
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
+    coll_cards_grading_population = db["CardsGradingPopulation"]
 
     q_cards: Dict[str, Any] = {}
     #q_cards["setId"] = "OP13"
@@ -1344,12 +1409,48 @@ def update_cards_market_data(
                 "bsg10": best_doc.get("bsg10"),
             }
 
+    population_history_by_card: Dict[str, List[Dict[str, Any]]] = {}
+    population_latest_prev_count: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
+    population_cursor = coll_cards_grading_population.find(
+        {"cardId": {"$in": ids}},
+        {
+            "cardId": 1,
+            "createdAt": 1,
+            "grade10.totalCount": 1,
+        },
+    ).sort([("cardId", 1), ("createdAt", -1)])
+
+    for population_doc in population_cursor:
+        card_id = population_doc.get("cardId")
+        if isinstance(card_id, str):
+            population_history_by_card.setdefault(card_id, []).append(population_doc)
+
+    for cid, docs in population_history_by_card.items():
+        latest_count: Optional[float] = None
+        previous_count: Optional[float] = None
+        for doc in docs:
+            total_count = _extract_grade10_total_count(doc)
+            if total_count is None:
+                continue
+            if latest_count is None:
+                latest_count = total_count
+                continue
+            previous_count = total_count
+            break
+        population_latest_prev_count[cid] = (latest_count, previous_count)
+
     ops: List[UpdateOne] = []
     touched = 0
     updated = 0
     for cid in ids:
         prices = per_item.get(cid, [])
-        md = compute_market_data_for_item(prices, graded_first.get(cid, {}))
+        psa10_count, psa10_count_previous = population_latest_prev_count.get(cid, (None, None))
+        md = compute_market_data_for_item(
+            prices,
+            graded_first.get(cid, {}),
+            psa10_count,
+            psa10_count_previous,
+        )
         touched += 1
         if any(v is not None for v in md.values()):
             ops.append(UpdateOne({"id": cid}, {"$set": {"marketData": md}}))
