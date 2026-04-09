@@ -23,7 +23,7 @@ if __name__ == "__main__":
         start_dt = datetime.now()
 
         print(f"🚀 Inizio esecuzione: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info("=== Start Ingestor ===")
+        logger.info("=== Start Ingestor Market Data ===")
         settings = load_settings()
         client = MongoClient(settings.mongodb_uri, tz_aware=True)
         db = client[settings.mongodb_db]
