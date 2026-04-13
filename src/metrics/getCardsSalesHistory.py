@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import os
 import sys
 import time
 import traceback
@@ -17,7 +19,13 @@ load_dotenv(ROOT_DIR / ".env.local")
 load_dotenv(ROOT_DIR / ".env")
 load_dotenv()
 
-from private_providers.cardsSalesHistory import main as provider_main
+
+def load_provider_main(module_name: str):
+    module = importlib.import_module(module_name)
+    provider_main = getattr(module, "main", None)
+    if not callable(provider_main):
+        raise AttributeError(f"Module {module_name!r} does not expose a callable main()")
+    return provider_main
 
 
 def main() -> int:
@@ -25,6 +33,8 @@ def main() -> int:
     start_dt = datetime.now()
 
     try:
+        module_name = os.getenv("CARDS_SALES_HISTORY_MODULE", "private_providers.cardsSalesHistory")
+        provider_main = load_provider_main(module_name)
         result = provider_main()
         if result not in (None, 0):
             raise RuntimeError(f"Provider exited with code {result}")
