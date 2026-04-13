@@ -564,9 +564,23 @@ def compute_market_data_for_item(
     # graded (USD)
     latest_psa10_usd, prev_psa10_usd = _extract_latest_and_previous_numeric(prices, "psa10")
     latest_bsg10_usd, _ = _extract_latest_and_previous_numeric(prices, "bsg10")
+    latest_sgc10_usd, _ = _extract_latest_and_previous_numeric(prices, "sgc10")
+    latest_cgc10_usd, _ = _extract_latest_and_previous_numeric(prices, "cgc10")
+    latest_bsg10black_usd, _ = _extract_latest_and_previous_numeric(prices, "bsg10black")
 
     psa10_usd = latest_psa10_usd if latest_psa10_usd is not None else _to_number(graded_first.get("psa10"))
     bsg10_usd = latest_bsg10_usd if latest_bsg10_usd is not None else _to_number(graded_first.get("bsg10"))
+    sgc10_usd = latest_sgc10_usd if latest_sgc10_usd is not None else _to_number(graded_first.get("sgc10"))
+    cgc10_usd = latest_cgc10_usd if latest_cgc10_usd is not None else _to_number(graded_first.get("cgc10"))
+    bsg10black_usd = latest_bsg10black_usd if latest_bsg10black_usd is not None else _to_number(graded_first.get("bsg10black"))
+
+    redline_values = [
+        _to_number((latest or {}).get("pricePrimary")),
+        _to_number((latest or {}).get("cmPriceTrend")),
+        _to_number((latest or {}).get("pricePriceCharting")),
+    ]
+    redline_values = [v for v in redline_values if v is not None]
+    price_redline = _round2(sum(redline_values) / len(redline_values)) if redline_values else None
 
     psa10_30d_usd = _pick_baseline_value_around(
         prices,
@@ -615,9 +629,19 @@ def compute_market_data_for_item(
 
         "priceTrend": _as_number_or_none(cm_trend), # USD
         "priceLow": _as_number_or_none(cm_low), # USD
+        "cmPriceTrend": _as_number_or_none((latest or {}).get("cmPriceTrend")), # USD
+        "cmPriceAvg": _as_number_or_none((latest or {}).get("cmPriceAvg")), # USD
+        "cmPriceLow": _as_number_or_none((latest or {}).get("cmPriceLow")), # USD
+        "cmAvg1d": _as_number_or_none((latest or {}).get("cmAvg1d")), # USD
+        "cmAvg7d": _as_number_or_none((latest or {}).get("cmAvg7d")), # USD
+        "cmAvg30d": _as_number_or_none((latest or {}).get("cmAvg30d")), # USD
+        "priceRedLine": _as_number_or_none(price_redline), # USD
 
         "psa10": _as_number_or_none(psa10_usd), # USD
         "bgs10": _as_number_or_none(bsg10_usd), # USD
+        "sgc10": _as_number_or_none(sgc10_usd), # USD
+        "cgc10": _as_number_or_none(cgc10_usd), # USD
+        "bsg10black": _as_number_or_none(bsg10black_usd), # USD
         "psa10Count": _as_number_or_none(psa10_count),
 
         "psa10PercentageChange30d": psa10_percentage_change_30d, # %
@@ -1366,6 +1390,9 @@ def update_cards_market_data(
             "sellers": 1,
             "psa10": 1,
             "bsg10": 1,
+            "sgc10": 1,
+            "cgc10": 1,
+            "bsg10black": 1,
         },
     )
 
@@ -1391,8 +1418,11 @@ def update_cards_market_data(
             # check graded prices
             has_psa = isinstance(d.get("psa10"), (int, float))
             has_bsg = isinstance(d.get("bsg10"), (int, float))
+            has_sgc = isinstance(d.get("sgc10"), (int, float))
+            has_cgc = isinstance(d.get("cgc10"), (int, float))
+            has_bsg_black = isinstance(d.get("bsg10black"), (int, float))
 
-            if not (has_psa or has_bsg):
+            if not (has_psa or has_bsg or has_sgc or has_cgc or has_bsg_black):
                 continue
 
             cad = d.get("createdAt")
@@ -1407,6 +1437,9 @@ def update_cards_market_data(
             graded_first[cid] = {
                 "psa10": best_doc.get("psa10"),
                 "bsg10": best_doc.get("bsg10"),
+                "sgc10": best_doc.get("sgc10"),
+                "cgc10": best_doc.get("cgc10"),
+                "bsg10black": best_doc.get("bsg10black"),
             }
 
     population_history_by_card: Dict[str, List[Dict[str, Any]]] = {}
