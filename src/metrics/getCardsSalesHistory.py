@@ -36,20 +36,25 @@ def main() -> int:
         module_name = os.getenv("CARDS_SALES_HISTORY_MODULE", "private_providers.cardsSalesHistory")
         provider_main = load_provider_main(module_name)
         result = provider_main()
-        if result not in (None, 0):
-            raise RuntimeError(f"Provider exited with code {result}")
 
         end_time = time.time()
         end_dt = datetime.now()
         elapsed = end_time - start_time
         minutes = elapsed / 60.0
 
+        has_partial_errors = result not in (None, 0)
+        subject = (
+            "⚠️ [1/1][WORKFLOW] PSA Cards Sales History (partial errors)"
+            if has_partial_errors
+            else "✅ [1/1][WORKFLOW] PSA Cards Sales History"
+        )
         body = (
             f"Start: {start_dt:%Y-%m-%d %H:%M:%S}\n"
             f"End:   {end_dt:%Y-%m-%d %H:%M:%S}\n"
-            f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)"
+            f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)\n"
+            f"Exit code: {result}"
         )
-        send_email("✅ [1/1][WORKFLOW] PSA Cards Sales History", body)
+        send_email(subject, body)
         return 0
     except Exception:
         send_email("🚫 [1/1][WORKFLOW] PSA Cards Sales History", traceback.format_exc())
