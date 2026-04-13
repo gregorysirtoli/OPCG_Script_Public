@@ -118,6 +118,7 @@ def main() -> int:
         "localId": 1,
         PRIMARY_ID_FIELD: 1,
         EXTERNAL_URI_FIELD: 1,
+        EXTERNAL_ID_FIELD: 1,
         CM_ID_FIELD: 1,
     }
 
@@ -182,8 +183,13 @@ def main() -> int:
                 if not item_id:
                     continue
 
+                # DEBUG: processa solo questa card
+                #if item_id != "RED01XXOP01091OP01X454622":
+                #    continue
+
                 primary_id = doc.get(PRIMARY_ID_FIELD)
                 external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
+                external_id = doc.get(EXTERNAL_ID_FIELD)
                 cm_id = doc.get(CM_ID_FIELD)
 
                 # Documento base
@@ -210,11 +216,12 @@ def main() -> int:
 
                 # ===== Secondary (breakdown grading + cm) =====
                 # Passiamo al provider le info utili: uri esterna, cm id, fx ecc.
-                if secondary and (external_uri or cm_id):
+                if secondary and (external_uri or cm_id or external_id):
                     card_info = {
                         "itemId": item_id,
                         "externalUri": external_uri,
                         "priceChartingUri": external_uri,
+                        "priceChartingId": external_id,
                         "cardMarketId": cm_id,
                         "eur_usd": fx,
                     }
@@ -238,8 +245,8 @@ def main() -> int:
                                 external_id_value = updates_map[EXTERNAL_ID_FIELD]
                             elif updates_map.get("externalId") is not None:
                                 external_id_value = updates_map["externalId"]
-                            elif updates_map.get("PriceChartingId") is not None:
-                                external_id_value = updates_map["PriceChartingId"]
+                            elif updates_map.get("priceChartingId") is not None:
+                                external_id_value = updates_map["priceChartingId"]
 
                             if EXTERNAL_ID_FIELD and external_id_value is not None:
                                 updates_clean[EXTERNAL_ID_FIELD] = int(external_id_value)

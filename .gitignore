@@ -19,3 +19,4 @@ artifacts
 # OS
 .DS_Store
 /private_providers/
+/tools/sets
