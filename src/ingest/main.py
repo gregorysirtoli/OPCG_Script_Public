@@ -9,18 +9,20 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+
+# =========================
+# ENV: deve stare PRIMA degli import di src.core.config
+# perché config.py legge os.getenv() al momento dell'import
+# =========================
+load_dotenv(".env.local")
+load_dotenv()
+
 from pymongo import MongoClient
 
 from src.core.config import ROME, load_settings
 from src.core.emailer import send_email
 from src.core.logging_setup import configure_logger
 from src.core.utils import TokenBucket, get_fx_eur_usd
-
-# =========================
-# ENV & Logger
-# =========================
-load_dotenv(".env.local")
-load_dotenv()
 logger = configure_logger()
 
 # =========================
@@ -120,6 +122,7 @@ def main() -> int:
         EXTERNAL_URI_FIELD: 1,
         EXTERNAL_ID_FIELD: 1,
         CM_ID_FIELD: 1,
+        "releaseDate": 1,
     }
 
     shard_idx = getattr(args, "shard_index", 0)
@@ -224,6 +227,7 @@ def main() -> int:
                         "priceChartingId": external_id,
                         "cardMarketId": cm_id,
                         "eur_usd": fx,
+                        "releaseDate": doc.get("releaseDate"),
                     }
                     try:
                         price_details_map, updates_map = secondary.fetch_secondary_breakdown(card_info)
@@ -262,6 +266,10 @@ def main() -> int:
                             if EXTERNAL_URI_FIELD and external_uri_value:
                                 updates_clean[EXTERNAL_URI_FIELD] = str(external_uri_value).lower()
 
+                            release_date_value = updates_map.get("releaseDate")
+                            if release_date_value is not None:
+                                updates_clean["releaseDate"] = release_date_value
+
                             alert_payload = updates_map.get("__secondary_alert__")
                             if isinstance(alert_payload, dict):
                                 secondary_alerts.append(
@@ -276,7 +284,7 @@ def main() -> int:
                                 )
 
                             if updates_clean:
-                                updates_clean["updatedAt"] = datetime.utcnow()
+                                updates_clean["updatedAt"] = datetime.now(timezone.utc)
                                 coll_cards.update_one({"_id": doc["_id"]}, {"$set": updates_clean})
 
                     except Exception as e:
