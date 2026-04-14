@@ -1400,6 +1400,8 @@ def update_cards_market_data(
             "sgc10": 1,
             "cgc10": 1,
             "bsg10black": 1,
+            "tag10": 1,
+            "ace10": 1,
         },
     )
 
@@ -1428,8 +1430,10 @@ def update_cards_market_data(
             has_sgc = isinstance(d.get("sgc10"), (int, float))
             has_cgc = isinstance(d.get("cgc10"), (int, float))
             has_bsg_black = isinstance(d.get("bsg10black"), (int, float))
+            has_tag10 = isinstance(d.get("tag10"), (int, float))
+            has_ace10 = isinstance(d.get("ace10"), (int, float))
 
-            if not (has_psa or has_bsg or has_sgc or has_cgc or has_bsg_black):
+            if not (has_psa or has_bsg or has_sgc or has_cgc or has_bsg_black or has_tag10 or has_ace10):
                 continue
 
             cad = d.get("createdAt")
@@ -1447,7 +1451,30 @@ def update_cards_market_data(
                 "sgc10": best_doc.get("sgc10"),
                 "cgc10": best_doc.get("cgc10"),
                 "bsg10black": best_doc.get("bsg10black"),
+                "tag10": best_doc.get("tag10"),
+                "ace10": best_doc.get("ace10"),
             }
+
+    # CardsMetrics fallback: if a card has no psa10 in Prices, use latestPrice from the most recent CardsMetrics doc.
+    coll_cards_metrics = db["CardsMetrics"]
+    cards_metrics_latest: Dict[str, float] = {}
+    for doc in coll_cards_metrics.find(
+        {"cardId": {"$in": ids}},
+        {"cardId": 1, "createdAt": 1, "latestPrice": 1},
+    ).sort("createdAt", -1):
+        card_id = doc.get("cardId")
+        latest_price = doc.get("latestPrice")
+        if isinstance(card_id, str) and card_id not in cards_metrics_latest:
+            v = _to_number(latest_price)
+            if v is not None:
+                cards_metrics_latest[card_id] = v
+
+    # Merge CardsMetrics latestPrice as psa10 fallback into graded_first.
+    for cid in ids:
+        if _to_number((graded_first.get(cid) or {}).get("psa10")) is None:
+            fallback = cards_metrics_latest.get(cid)
+            if fallback is not None:
+                graded_first.setdefault(cid, {})["psa10"] = fallback
 
     population_history_by_card: Dict[str, List[Dict[str, Any]]] = {}
     population_latest_prev_count: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
