@@ -567,12 +567,16 @@ def compute_market_data_for_item(
     latest_sgc10_usd, _ = _extract_latest_and_previous_numeric(prices, "sgc10")
     latest_cgc10_usd, _ = _extract_latest_and_previous_numeric(prices, "cgc10")
     latest_bsg10black_usd, _ = _extract_latest_and_previous_numeric(prices, "bsg10black")
+    latest_tag10_usd, _ = _extract_latest_and_previous_numeric(prices, "tag10")
+    latest_ace10_usd, _ = _extract_latest_and_previous_numeric(prices, "ace10")
 
     psa10_usd = latest_psa10_usd if latest_psa10_usd is not None else _to_number(graded_first.get("psa10"))
     bsg10_usd = latest_bsg10_usd if latest_bsg10_usd is not None else _to_number(graded_first.get("bsg10"))
     sgc10_usd = latest_sgc10_usd if latest_sgc10_usd is not None else _to_number(graded_first.get("sgc10"))
     cgc10_usd = latest_cgc10_usd if latest_cgc10_usd is not None else _to_number(graded_first.get("cgc10"))
     bsg10black_usd = latest_bsg10black_usd if latest_bsg10black_usd is not None else _to_number(graded_first.get("bsg10black"))
+    tag10_usd = latest_tag10_usd if latest_tag10_usd is not None else _to_number(graded_first.get("tag10"))
+    ace10_usd = latest_ace10_usd if latest_ace10_usd is not None else _to_number(graded_first.get("ace10"))
 
     redline_values = [
         _to_number((latest or {}).get("pricePrimary")),
@@ -643,6 +647,8 @@ def compute_market_data_for_item(
         "sgc10": _as_number_or_none(sgc10_usd), # USD
         "cgc10": _as_number_or_none(cgc10_usd), # USD
         "bsg10black": _as_number_or_none(bsg10black_usd), # USD
+        "tag10": _as_number_or_none(tag10_usd), # USD
+        "ace10": _as_number_or_none(ace10_usd), # USD
         "psa10Count": _as_number_or_none(psa10_count),
 
         "psa10PercentageChange30d": psa10_percentage_change_30d, # %
