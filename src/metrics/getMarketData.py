@@ -625,6 +625,7 @@ def compute_market_data_for_item(
         "listings": listings if listings is not None else None,
         "price": _as_number_or_none(s.price_now_usd), # USD
         "pricePrimary": _as_number_or_none((latest or {}).get("pricePrimary")), # USD
+        "pricePriceCharting": _as_number_or_none((latest or {}).get("pricePriceCharting")), # USD
         "priceSecondary": _as_number_or_none(price_secondary), # USD
 
         "priceTrend": _as_number_or_none(cm_trend), # USD
