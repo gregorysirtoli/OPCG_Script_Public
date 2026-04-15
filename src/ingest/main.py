@@ -23,6 +23,7 @@ from src.core.config import ROME, load_settings
 from src.core.emailer import send_email
 from src.core.logging_setup import configure_logger
 from src.core.utils import TokenBucket, get_fx_eur_usd
+from src.metrics.getMarketData import _compute_price_redline
 logger = configure_logger()
 
 # =========================
@@ -293,6 +294,10 @@ def main() -> int:
                 # Se non c’è nulla da inserire oltre a createdAt/itemId, salta
                 if len(row.keys()) <= 3:
                     continue
+
+                price_redline = _compute_price_redline(row)
+                if price_redline is not None:
+                    row["priceRedLine"] = price_redline
 
                 rows_batch.append(row)
 
