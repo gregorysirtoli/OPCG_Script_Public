@@ -155,6 +155,16 @@ def _round2(n: Optional[float]) -> Optional[float]:
     return float(f"{n:.2f}")
 
 
+def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
+    redline_values = [
+        _to_number((doc or {}).get("pricePrimary")),
+        _to_number((doc or {}).get("cmPriceTrend")),
+        _to_number((doc or {}).get("pricePriceCharting")),
+    ]
+    redline_values = [value for value in redline_values if value is not None]
+    return _round2(sum(redline_values) / len(redline_values)) if redline_values else None
+
+
 def _safe_round2(n: float) -> float:
     return float(f"{n:.2f}")
 
@@ -580,13 +590,7 @@ def compute_market_data_for_item(
     tag10_usd = latest_tag10_usd if latest_tag10_usd is not None else _to_number(graded_first.get("tag10"))
     ace10_usd = latest_ace10_usd if latest_ace10_usd is not None else _to_number(graded_first.get("ace10"))
 
-    redline_values = [
-        _to_number((latest or {}).get("pricePrimary")),
-        _to_number((latest or {}).get("cmPriceTrend")),
-        _to_number((latest or {}).get("pricePriceCharting")),
-    ]
-    redline_values = [v for v in redline_values if v is not None]
-    price_redline = _round2(sum(redline_values) / len(redline_values)) if redline_values else None
+    price_redline = _compute_price_redline(latest)
 
     psa10_30d_usd = _pick_baseline_value_around(
         prices,
