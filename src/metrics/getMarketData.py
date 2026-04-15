@@ -10,6 +10,7 @@ from pymongo.database import Database
 GRADING_FEES = 30
 SET_TREND_DAYS = 90
 SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
+SET_HISTORY_LOOKBACK_DAYS = 45
 SET_TOP_BASE_PRICE = 20.0
 SET_MARKET_HISTORY_COLLECTION = "SetsMarketData"
 SET_MARKET_HISTORY_FIELDS = (
@@ -19,6 +20,8 @@ SET_MARKET_HISTORY_FIELDS = (
     "totalCardsPrice",
     "totalOtherTypesPrice",
     "totalPrice",
+    "totalPriceChange7d",
+    "totalPriceChange30d",
     "psa10CardsCount",
     "psa10TotalPrice",
     "bgs10CardsCount",
@@ -702,6 +705,7 @@ def _build_set_market_data(
     items: List[Dict[str, Any]],
     sealed_price: Optional[float],
     price_history_by_item: Dict[str, List[Dict[str, Any]]],
+    set_history_docs: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     cards = [item for item in items if item.get("type") == "Cards"]
     non_cards = [item for item in items if item.get("type") != "Cards"]
@@ -750,6 +754,30 @@ def _build_set_market_data(
     total_cards_price = _safe_round2(sum(cards_prices)) if cards_prices else 0.0
     total_other_types_price = _safe_round2(sum(non_cards_prices)) if non_cards_prices else 0.0
     total_price = _safe_round2(total_cards_price + total_other_types_price)
+
+    now_utc = datetime.now(timezone.utc)
+    baseline_total_price_7d = _pick_baseline_value_around(
+        set_history_docs,
+        "totalPrice",
+        now_utc - timedelta(days=7),
+        max_days=3.5,
+    )
+    baseline_total_price_30d = _pick_baseline_value_around(
+        set_history_docs,
+        "totalPrice",
+        now_utc - timedelta(days=30),
+        max_days=7,
+    )
+    total_price_change_7d = (
+        _round2(total_price - baseline_total_price_7d)
+        if baseline_total_price_7d is not None
+        else None
+    )
+    total_price_change_30d = (
+        _round2(total_price - baseline_total_price_30d)
+        if baseline_total_price_30d is not None
+        else None
+    )
 
     booster_box_price = _safe_round2(sealed_price) if sealed_price is not None and sealed_price > 0 else None
     booster_pack_price = None
@@ -980,7 +1008,7 @@ def _build_set_market_data(
     volatility_score = round(score01 * 100.0) / 10.0
 
     day_labels: List[str] = []
-    end_day = datetime.now(timezone.utc)
+    end_day = now_utc
     start_day = end_day - timedelta(days=SET_TREND_DAYS)
     cursor_day = datetime(
         start_day.year,
@@ -1149,6 +1177,8 @@ def _build_set_market_data(
         "totalCardsPrice": total_cards_price,
         "totalOtherTypesPrice": total_other_types_price,
         "totalPrice": total_price,
+        "totalPriceChange7d": total_price_change_7d,
+        "totalPriceChange30d": total_price_change_30d,
         "psa10CardsCount": len(psa10_prices),
         "psa10TotalPrice": _safe_round2(sum(psa10_prices)) if psa10_prices else 0.0,
         "bgs10CardsCount": len(bgs10_prices),
@@ -1318,6 +1348,23 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
                 reverse=True,
             )
 
+    set_history_by_set: Dict[str, List[Dict[str, Any]]] = {}
+    history_since = now_utc - timedelta(days=SET_HISTORY_LOOKBACK_DAYS)
+    for history_doc in coll_history.find(
+        {
+            "setId": {"$in": set_id_list},
+            "createdAt": {"$gte": history_since},
+        },
+        {
+            "setId": 1,
+            "createdAt": 1,
+            "totalPrice": 1,
+        },
+    ):
+        set_id = history_doc.get("setId")
+        if isinstance(set_id, str):
+            set_history_by_set.setdefault(set_id, []).append(history_doc)
+
     ops: List[UpdateOne] = []
     history_ops: List[InsertOne] = []
     touched = 0
@@ -1333,6 +1380,7 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
             items=items_by_set.get(set_id, []),
             sealed_price=sealed_price,
             price_history_by_item=price_history_by_item,
+            set_history_docs=set_history_by_set.get(set_id, []),
         )
         touched += 1
         ops.append(
