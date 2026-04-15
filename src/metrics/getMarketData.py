@@ -769,13 +769,13 @@ def _build_set_market_data(
         max_days=7,
     )
     total_price_change_7d = (
-        _round2(total_price - baseline_total_price_7d)
-        if baseline_total_price_7d is not None
+        _round2((total_price - baseline_total_price_7d) / baseline_total_price_7d * 100.0)
+        if baseline_total_price_7d is not None and baseline_total_price_7d > 0
         else None
     )
     total_price_change_30d = (
-        _round2(total_price - baseline_total_price_30d)
-        if baseline_total_price_30d is not None
+        _round2((total_price - baseline_total_price_30d) / baseline_total_price_30d * 100.0)
+        if baseline_total_price_30d is not None and baseline_total_price_30d > 0
         else None
     )
 
