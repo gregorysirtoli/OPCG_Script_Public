@@ -566,6 +566,7 @@ def compute_market_data_for_item(
     latest_bsg10_usd, _ = _extract_latest_and_previous_numeric(prices, "bsg10")
     latest_sgc10_usd, _ = _extract_latest_and_previous_numeric(prices, "sgc10")
     latest_cgc10_usd, _ = _extract_latest_and_previous_numeric(prices, "cgc10")
+    latest_cgc10pristine_usd, _ = _extract_latest_and_previous_numeric(prices, "cgc10pristine")
     latest_bsg10black_usd, _ = _extract_latest_and_previous_numeric(prices, "bsg10black")
     latest_tag10_usd, _ = _extract_latest_and_previous_numeric(prices, "tag10")
     latest_ace10_usd, _ = _extract_latest_and_previous_numeric(prices, "ace10")
@@ -574,6 +575,7 @@ def compute_market_data_for_item(
     bsg10_usd = latest_bsg10_usd if latest_bsg10_usd is not None else _to_number(graded_first.get("bsg10"))
     sgc10_usd = latest_sgc10_usd if latest_sgc10_usd is not None else _to_number(graded_first.get("sgc10"))
     cgc10_usd = latest_cgc10_usd if latest_cgc10_usd is not None else _to_number(graded_first.get("cgc10"))
+    cgc10pristine_usd = latest_cgc10pristine_usd if latest_cgc10pristine_usd is not None else _to_number(graded_first.get("cgc10pristine"))
     bsg10black_usd = latest_bsg10black_usd if latest_bsg10black_usd is not None else _to_number(graded_first.get("bsg10black"))
     tag10_usd = latest_tag10_usd if latest_tag10_usd is not None else _to_number(graded_first.get("tag10"))
     ace10_usd = latest_ace10_usd if latest_ace10_usd is not None else _to_number(graded_first.get("ace10"))
@@ -646,6 +648,7 @@ def compute_market_data_for_item(
         "bgs10": _as_number_or_none(bsg10_usd), # USD
         "sgc10": _as_number_or_none(sgc10_usd), # USD
         "cgc10": _as_number_or_none(cgc10_usd), # USD
+        "cgc10pristine": _as_number_or_none(cgc10pristine_usd), # USD
         "bsg10black": _as_number_or_none(bsg10black_usd), # USD
         "tag10": _as_number_or_none(tag10_usd), # USD
         "ace10": _as_number_or_none(ace10_usd), # USD
@@ -1399,6 +1402,7 @@ def update_cards_market_data(
             "bsg10": 1,
             "sgc10": 1,
             "cgc10": 1,
+            "cgc10pristine": 1,
             "bsg10black": 1,
             "tag10": 1,
             "ace10": 1,
@@ -1429,11 +1433,12 @@ def update_cards_market_data(
             has_bsg = isinstance(d.get("bsg10"), (int, float))
             has_sgc = isinstance(d.get("sgc10"), (int, float))
             has_cgc = isinstance(d.get("cgc10"), (int, float))
+            has_cgc_pristine = isinstance(d.get("cgc10pristine"), (int, float))
             has_bsg_black = isinstance(d.get("bsg10black"), (int, float))
             has_tag10 = isinstance(d.get("tag10"), (int, float))
             has_ace10 = isinstance(d.get("ace10"), (int, float))
 
-            if not (has_psa or has_bsg or has_sgc or has_cgc or has_bsg_black or has_tag10 or has_ace10):
+            if not (has_psa or has_bsg or has_sgc or has_cgc or has_cgc_pristine or has_bsg_black or has_tag10 or has_ace10):
                 continue
 
             cad = d.get("createdAt")
@@ -1450,6 +1455,7 @@ def update_cards_market_data(
                 "bsg10": best_doc.get("bsg10"),
                 "sgc10": best_doc.get("sgc10"),
                 "cgc10": best_doc.get("cgc10"),
+                "cgc10pristine": best_doc.get("cgc10pristine"),
                 "bsg10black": best_doc.get("bsg10black"),
                 "tag10": best_doc.get("tag10"),
                 "ace10": best_doc.get("ace10"),
