@@ -3,8 +3,11 @@ name: Run PSA Cards Grading Population
 on:
   workflow_dispatch:
   schedule:
-    # Weekly at 23:00 Sunday America/New_York during DST (03:00 UTC Monday, 05:00 Monday Italia CEST / 04:00 Monday Italia CET)
-    - cron: "0 3 * * 1"
+    # Runs every Sunday at 23:00 America/New_York (Sunday)
+    # Runs every Sunday at 23:00 Italy (CET/CEST)
+    # There are two cron schedules to cover both time zones.
+    - cron: "0 23 * * 0" # Sunday 23:00 America/New_York
+    - cron: "0 21 * * 0" # Sunday 23:00 Italy (CET/CEST = UTC+1/UTC+2)
 
 jobs:
   run-cards-grading-population:
@@ -20,7 +23,7 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
-      # Modulo provider privato
+      # Private providers module path
       CARDS_GRADING_POPULATION_MODULE: private_providers.cardsGradingPopulation
 
     steps:
