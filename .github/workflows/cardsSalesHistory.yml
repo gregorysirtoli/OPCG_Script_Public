@@ -21,7 +21,7 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
-      # Modulo provider privato
+      # Private providers modules
       CARDS_SALES_HISTORY_MODULE: private_providers.cardsSalesHistory
 
     steps:
