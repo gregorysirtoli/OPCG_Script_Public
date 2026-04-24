@@ -229,6 +229,7 @@ def main() -> int:
                         "cardMarketId": cm_id,
                         "eur_usd": fx,
                         "releaseDate": doc.get("releaseDate"),
+                        "type": doc.get("type", ""),
                     }
                     try:
                         price_details_map, updates_map = secondary.fetch_secondary_breakdown(card_info)
