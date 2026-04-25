@@ -34,6 +34,7 @@ jobs:
 
       # === CM (RED04) ===
       CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_URL }}
+      CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL }}
 
       # ===  FX ===
       FX_API_URL: ${{ secrets.FX_API_URL }}
