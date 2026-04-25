@@ -233,14 +233,12 @@ def main() -> int:
                     }
                     try:
                         price_details_map, updates_map = secondary.fetch_secondary_breakdown(card_info)
+                        print(f"[DEBUG] Card {item_id} - price_details_map: {price_details_map}")
 
                         # --- unisci i dettagli prezzo (PSA/BGS/CGC + price + cm*) ---
-                        # Attesi (facoltativi):
-                        #   priceUngraded, priceGrade7, priceGrade8, priceGrade9, priceGrade95,
-                        #   psa10, sgc10, cgc10, cgc10pristine, bsg10, bsg10black, price,
-                        #   cmPriceTrend, cmAvg30d, cmAvg7d, cmAvg1d, cmPriceAvg, cmPriceLow, cmFrom, cmAvailableItems
                         for k, v in (price_details_map or {}).items():
                             if v is not None:
+                                print(f"[DEBUG] Card {item_id} - {k} = {v}")
                                 row[k] = v
 
                         # --- eventuali update soft su Cards ---
