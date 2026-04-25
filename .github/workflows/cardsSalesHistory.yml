@@ -3,8 +3,7 @@ name: Run PSA Cards Sales History
 on:
   workflow_dispatch:
   schedule:
-    # Alle 2:00 e 14:00 italiane (00:00 e 12:00 UTC)
-    - cron: "0 0 * * *"
+    # Alle 14:00 italiane (12:00 UTC)
     - cron: "0 12 * * *"
 
 jobs:
