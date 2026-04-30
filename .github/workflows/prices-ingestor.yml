@@ -1,15 +1,15 @@
 name: Run Ingestor
 
 on:
-  workflow_dispatch: # esecuzione manuale
-  schedule: # esecuzione giornaliera alle 13:00 Europe/Rome (con DST)
-    - cron: "0 11 * * *" # quando è CEST (UTC+2) → 11:00 UTC = 13:00 IT
+  workflow_dispatch: # manual trigger
+  schedule: # 12:00 Europe/Rome (UTC con DST)
+    - cron: "0 10 * * *" # cover CEST (UTC+2)
+    - cron: "0 11 * * *" # cover CET (UTC+1)
 
 jobs:
   run-batches:
     runs-on: ubuntu-24.04
 
-    # env del job
     env:
       PYTHONUNBUFFERED: 1
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
@@ -20,7 +20,7 @@ jobs:
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       MAIL_SUBJECT: "[Ingestor] Report"
 
-      # Modulo providers privato
+      # Private providers
       PROVIDERS_MODULE: private_providers.bundle
 
       # === PRIMARY (RED01) ===
@@ -39,7 +39,7 @@ jobs:
       # ===  FX ===
       FX_API_URL: ${{ secrets.FX_API_URL }}
 
-      # === MAPPING CAMPI ===
+      # === FIELD MAPPING ===
       ITEM_ID_FIELD: id
       PRIMARY_ID_FIELD: ${{ secrets.PRIMARY_ID_FIELD }}
       EXTERNAL_URI_FIELD: ${{ secrets.EXTERNAL_URI_FIELD }}
@@ -54,20 +54,35 @@ jobs:
       BURST: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Gate Europe/Rome noon
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(TZ=Europe/Rome date +%H:%M)" = "12:00" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      # checkout della repo PRIVATA dei providers
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
         with:
-          repository: gregorysirtoli/OPCG_Script_Private # DOVE prendere il codice privato
-          token: ${{ secrets.PROVIDERS_TOKEN }} # PAT con accesso a quella repo
+          repository: gregorysirtoli/OPCG_Script_Private
+          token: ${{ secrets.PROVIDERS_TOKEN }}
           path: private_providers
 
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: "3.11"
 
       - run: python -m pip install -r requirements.txt
+        if: steps.gate.outputs.run == 'true'
 
       - name: Run shard
+        if: steps.gate.outputs.run == 'true'
         run: python -m src.ingest.main --shard-index "0" --shard-total "1"
