@@ -162,6 +162,7 @@ def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     redline_values = [
         _to_number((doc or {}).get("pricePrimary")),
         _to_number((doc or {}).get("cmPriceTrend")),
+        _to_number((doc or {}).get("cmAvg30d")),
         _to_number((doc or {}).get("priceYuyuTei")),
         _to_number((doc or {}).get("pricePriceCharting")),
     ]
