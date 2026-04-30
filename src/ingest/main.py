@@ -196,8 +196,8 @@ def main() -> int:
                     continue
 
                 # DEBUG: processa solo questa card
-                #if item_id != "RED01XXOP01091OP01X454622":
-                #    continue
+                if item_id != "RED04XXOP13083OP13J845625":
+                    continue
 
                 primary_id = doc.get(PRIMARY_ID_FIELD)
                 external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
