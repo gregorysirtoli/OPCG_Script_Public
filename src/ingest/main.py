@@ -108,10 +108,14 @@ def main() -> int:
     # Trova i provider per nome (puoi cambiare i nomi se nel bundle sono diversi)
     primary = next((p for p in providers if getattr(p, "name", "") == "primary"), None)
     secondary = next((p for p in providers if getattr(p, "name", "") == "secondary"), None)
+    third = next((p for p in providers if getattr(p, "name", "") == "third"), None)
     if not primary:
         logger.warning("Primary provider not found – proceeding without primary.")
     if not secondary:
         logger.warning("Secondary provider not found – proceeding without secondary.")
+
+    if not third:
+        logger.warning("Third provider not found - proceeding without third provider.")
 
     # ===== Query Cards (proiezione minima) =====
     projection = {
@@ -119,6 +123,10 @@ def main() -> int:
         ITEM_ID_FIELD: 1,
         "name": 1,
         "localId": 1,
+        "type": 1,
+        "setId": 1,
+        "yuyuteiId": 1,
+        "yuyuteiLink": 1,
         PRIMARY_ID_FIELD: 1,
         EXTERNAL_URI_FIELD: 1,
         EXTERNAL_ID_FIELD: 1,
@@ -291,6 +299,26 @@ def main() -> int:
                         logger.warning("Secondary error itemId=%s: %s", item_id, e)
 
                 # Se non c’è nulla da inserire oltre a createdAt/itemId, salta
+                if third:
+                    try:
+                        price_yuyutei = third.fetch_yuyutei_price(
+                            {
+                                "itemId": item_id,
+                                "setId": doc.get("setId"),
+                                "yuyuteiId": doc.get("yuyuteiId"),
+                                "yuyuteiLink": doc.get("yuyuteiLink"),
+                            }
+                        )
+                        if price_yuyutei is not None:
+                            row["priceYuyuTei"] = price_yuyutei
+                    except Exception as e:
+                        logger.warning(
+                            "Yuyutei error itemId=%s yuyuteiId=%s: %s",
+                            item_id,
+                            doc.get("yuyuteiId"),
+                            e,
+                        )
+
                 if len(row.keys()) <= 3:
                     continue
 
