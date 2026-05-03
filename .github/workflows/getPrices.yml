@@ -1,4 +1,4 @@
-name: Run Ingestor
+name: Run Prices
 
 on:
   workflow_dispatch: # manual trigger
@@ -17,7 +17,7 @@ jobs:
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
-      MAIL_SUBJECT: "[Ingestor] Report"
+      MAIL_SUBJECT: "[Ingestor] Prices report"
 
       # Private providers
       PROVIDERS_MODULE: private_providers.bundle

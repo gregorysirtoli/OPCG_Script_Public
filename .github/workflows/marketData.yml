@@ -3,7 +3,7 @@ name: Run MarketData
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run Ingestor"]
+    workflows: ["Run Prices"]
     types:
       - completed
 
