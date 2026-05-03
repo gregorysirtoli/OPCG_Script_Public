@@ -37,6 +37,9 @@ _bucket = TokenBucket(RATE_PER_SEC, BURST)
 def now_rome() -> datetime:
     return datetime.now(ROME)
 
+def execution_fingerprint(dt: datetime) -> str:
+    return dt.strftime("%Y%m%d%H%M")
+
 def load_provider_module(module_name: Optional[str]):
     """
     Carica dinamicamente i provider dal modulo indicato (repo privata o mock pubblico).
@@ -69,8 +72,11 @@ def main() -> int:
     args = parse_args()
     start_time = time.time()
     start_dt = datetime.now()
+    run_dt_rome = now_rome()
+    run_fingerprint = execution_fingerprint(run_dt_rome)
 
     logger.info("=== Start Ingestor ===")
+    logger.info("Execution fingerprint: %s", run_fingerprint)
 
     # ===== Field mapping (da ENV) =====
     ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id") or "id"
@@ -196,8 +202,8 @@ def main() -> int:
                     continue
 
                 # DEBUG: processa solo questa card
-                #if item_id != "RED02XXOP01002PERRA277477":
-                #    continue
+                if item_id != "RED02XXOP01002PERRA277477":
+                    continue
 
                 primary_id = doc.get(PRIMARY_ID_FIELD)
                 external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
@@ -209,6 +215,7 @@ def main() -> int:
                 row: Dict[str, Any] = {
                     "createdAt": now_rome(),
                     "itemId": item_id,
+                    "executionFingerprint": run_fingerprint,
                     #"currency": "USD",
                     "weekNumber": dt_now.isocalendar().week, 
                 }
