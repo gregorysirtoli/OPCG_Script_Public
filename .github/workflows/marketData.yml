@@ -3,7 +3,7 @@ name: Run MarketData
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run Prices"]
+    workflows: ["Run Prices (Retry)"]
     types:
       - completed
 

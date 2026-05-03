@@ -1,0 +1,68 @@
+name: Run Prices (Retry)
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Run Prices"]
+    types:
+      - completed
+
+jobs:
+  retry-pricecharting-uri-errors:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: 1
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      MAIL_SUBJECT: "[Ingestor] Prices retry PriceCharting URI errors report"
+
+      PROVIDERS_MODULE: private_providers.bundle
+
+      PRIMARY_URL_TEMPLATE: ${{ secrets.PRIMARY_URL_TEMPLATE }}
+      PRIMARY_REFERER_TEMPLATE: ${{ secrets.PRIMARY_REFERER_TEMPLATE }}
+      PRIMARY_HEADER_TEMPLATE: ${{ secrets.PRIMARY_HEADER_TEMPLATE }}
+
+      SECONDARY_LABEL_MAP: ${{ secrets.SECONDARY_LABEL_MAP }}
+      SECONDARY_SELECTORS: ${{ secrets.SECONDARY_SELECTORS }}
+
+      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_URL }}
+      CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL }}
+
+      FX_API_URL: ${{ secrets.FX_API_URL }}
+
+      ITEM_ID_FIELD: id
+      PRIMARY_ID_FIELD: ${{ secrets.PRIMARY_ID_FIELD }}
+      EXTERNAL_URI_FIELD: ${{ secrets.EXTERNAL_URI_FIELD }}
+      EXTERNAL_ID_FIELD: ${{ secrets.EXTERNAL_ID_FIELD }}
+      CM_ID_FIELD: ${{ secrets.CM_ID_FIELD }}
+
+      PRICES_BATCH: 500
+      MONGO_PAGE_SIZE: 200
+      SAMPLE_LIMIT: 0
+      RATE_PER_SEC: 1.2
+      BURST: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: gregorysirtoli/OPCG_Script_Private
+          token: ${{ secrets.PROVIDERS_TOKEN }}
+          path: private_providers
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: python -m pip install -r requirements.txt
+
+      - name: Retry cards with PriceCharting URI errors
+        run: python -m src.ingest.retry_pricecharting_uri_errors --shard-index "0" --shard-total "1"
