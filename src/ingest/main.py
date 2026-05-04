@@ -414,6 +414,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
+        send_email("⚠️ [1/5][WORKFLOW] START - Prices Ingestor", traceback.format_exc())
         sys.exit(main())
     except Exception:
         send_email("🚫 [1/5][WORKFLOW] Prices Ingestor", traceback.format_exc())
