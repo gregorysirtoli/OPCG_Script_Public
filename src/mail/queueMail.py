@@ -66,7 +66,8 @@ def enqueue_mail(db, subject: str, body: str, to: str, alert_id: ObjectId) -> No
         "lockedBy": None,
         "lastError": None,
         "retries": 0,
-         "alertId": alert_id,
+        "alertId": alert_id,
+        "reportType": "priceAlert",
     })
 
 # =============================================================================
@@ -383,6 +384,10 @@ async def main() -> None:
         )
         cardtrader_url = "https://www.cardtrader.com/invite/ivory-swamp-389"
 
+        to_email = (a.get("userEmail") or "").strip()
+        if not to_email:
+            continue
+
         body = (
             "Hi,<br>"
             "we have good news for you! <br><br>One of the cards you have been looking for has reached your price conditions.<br><br>"
@@ -394,8 +399,8 @@ async def main() -> None:
             + f"<li>Check it out on <a href='{ebay_url}'>Ebay</a></li>"
             f"<li>Check it out on <a href='{cardtrader_url}'>CardTrader</a></li>"
             "</ul>"
-            f"<br>You are receiving this notification because on date {created_at_str} you have set up an alert for the card {card_name}.<br>"
-            "If you wish to stop receiving notifications, please log in to your account and update your mail alert preferences in the settings.<br>"
+            f"<br>This email was sent to {to_email} because on date {created_at_str} you have set up an alert for the card {card_name} on RED LINE (https://redline.cards/)..<br>"
+            "If you wish to stop receiving notifications, please log in to your account and update your mail alert preferences in the <a href='https://redline.cards/account'>settings</a>.<br>"
             "This is a free notification service of the RED LINE website (https://redline.cards/).<br><br>"
             "______<br><br>"
             "<i>This e-mail may contain confidential and/or privileged information.<br>"
@@ -403,10 +408,6 @@ async def main() -> None:
             "Any unauthorized copying, disclosure, or distribution of the material contained in this e-mail is strictly prohibited</i>.<br><br>"
             f"### This is an automatically generated message on UTC {now.strftime('%Y-%m-%d %H:%M:%S')} ###<br><br>"
         )
-
-        to_email = a.get("userEmail")
-        if not to_email:
-            continue
 
         # Queue email in DB
         enqueue_mail(
