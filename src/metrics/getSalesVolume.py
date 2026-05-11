@@ -285,6 +285,123 @@ def upsert_sales_volume_weekly(db, data: Dict[str, Any]) -> None:
     coll_w.delete_many({"weekStart": data["weekStart"]})
     coll_w.insert_one(data)
 
+
+# =============================== GAP FILLING =================================
+def get_last_sales_volume_date(db) -> Optional[datetime]:
+    """Get the most recent date from SalesVolume collection."""
+    coll_sv: Collection = db["SalesVolume"]
+    result = coll_sv.find_one(sort=[("date", -1)], projection={"date": 1})
+    return result["date"] if result else None
+
+
+def get_last_sales_volume_weekly_date(db) -> Optional[datetime]:
+    """Get the most recent weekEnd from SalesVolumeWeekly collection."""
+    coll_w: Collection = db["SalesVolumeWeekly"]
+    result = coll_w.find_one(sort=[("weekEnd", -1)], projection={"weekEnd": 1})
+    return result["weekEnd"] if result else None
+
+
+def fill_missing_daily_volumes(db, last_date: Optional[datetime], until_date: datetime) -> List[str]:
+    """
+    Fill missing daily SalesVolume entries between last_date and until_date.
+    Returns list of filled date strings.
+    """
+    filled_dates = []
+
+    # If no last date, start from 30 days ago
+    if last_date is None:
+        start_date = until_date - timedelta(days=30)
+    else:
+        # Start from the day after last_date
+        if last_date.tzinfo is None:
+            last_date_rome = last_date.replace(tzinfo=timezone.utc).astimezone(EUROPE_ROME)
+        else:
+            last_date_rome = last_date.astimezone(EUROPE_ROME)
+        start_date = last_date_rome + timedelta(days=1)
+
+    # Ensure proper timezone
+    if start_date.tzinfo is None:
+        start_date = start_date.replace(tzinfo=EUROPE_ROME)
+
+    # Generate all missing days
+    current_day = start_date.replace(hour=12, minute=0, second=0, microsecond=0)
+    until_day = until_date.replace(hour=12, minute=0, second=0, microsecond=0)
+
+    coll_sv: Collection = db["SalesVolume"]
+
+    while current_day <= until_day:
+        date_str = current_day.date().isoformat()
+        
+        # Check if this day already exists (query by date range to be safe)
+        day_start_utc, day_end_utc = _day_bounds_rome(current_day)
+        existing = coll_sv.find_one({"date": {"$gte": day_start_utc, "$lte": day_end_utc}})
+        
+        if existing is None:
+            # Compute and upsert
+            data = compute_daily_sales_volume(db, current_day)
+            upsert_sales_volume(db, current_day, data)
+            filled_dates.append(date_str)
+
+        current_day += timedelta(days=1)
+
+    return filled_dates
+
+
+def fill_missing_weekly_volumes(db, until_date: datetime) -> List[str]:
+    """
+    Fill missing SalesVolumeWeekly entries up to until_date.
+    Returns list of filled week starts.
+    """
+    filled_weeks = []
+    coll_w: Collection = db["SalesVolumeWeekly"]
+
+    # Get the last week end
+    last_week_result = coll_w.find_one(sort=[("weekEnd", -1)], projection={"weekEnd": 1})
+    
+    if last_week_result is None:
+        # No weekly data, start from 12 weeks ago
+        start_date = until_date - timedelta(weeks=12)
+    else:
+        # Start from the day after last weekEnd
+        last_week_end = last_week_result["weekEnd"]
+        if last_week_end.tzinfo is None:
+            last_week_end = last_week_end.replace(tzinfo=timezone.utc).astimezone(EUROPE_ROME)
+        else:
+            last_week_end = last_week_end.astimezone(EUROPE_ROME)
+        start_date = last_week_end + timedelta(days=1)
+
+    # Ensure proper timezone
+    if start_date.tzinfo is None:
+        start_date = start_date.replace(tzinfo=EUROPE_ROME)
+
+    # Generate all missing weeks
+    current_day = start_date.replace(hour=12, minute=0, second=0, microsecond=0)
+    until_day = until_date.replace(hour=12, minute=0, second=0, microsecond=0)
+
+    # Track processed weeks to avoid duplicates
+    processed_weeks = set()
+    for doc in coll_w.find({}, {"weekStart": 1}):
+        week_start = doc.get("weekStart")
+        if week_start:
+            processed_weeks.add(week_start)
+
+    while current_day <= until_day:
+        # Get week boundaries
+        week_start, week_end = _week_bounds_rome(current_day)
+        
+        # Check if this week has already been processed
+        if week_start not in processed_weeks:
+            # Compute and upsert
+            data = compute_weekly_sales_volume(db, current_day)
+            upsert_sales_volume_weekly(db, data)
+            filled_weeks.append(week_start.astimezone(EUROPE_ROME).date().isoformat())
+            processed_weeks.add(week_start)
+
+        # Increment to next day (will process each week once when hitting any day in that week)
+        current_day += timedelta(days=1)
+
+    return filled_weeks
+
 # =============================== MAIN =================================
 def main() -> int:
     try:
@@ -298,18 +415,34 @@ def main() -> int:
         now_rome = datetime.now(EUROPE_ROME)
         yesterday_rome = (now_rome - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
 
-        data = compute_daily_sales_volume(db, yesterday_rome)
-        upsert_sales_volume(db, yesterday_rome, data)
+        summary = "[SalesVolume] Gap Filling Report\n"
 
-        summary = f"[SalesVolume] Upserted {data}"
-        print(f"{summary}")
+        # === FILL MISSING DAILY VOLUMES ===
+        last_daily_date = get_last_sales_volume_date(db)
+        filled_daily_dates = fill_missing_daily_volumes(db, last_daily_date, yesterday_rome)
+        
+        if filled_daily_dates:
+            summary += f"✓ Filled {len(filled_daily_dates)} missing daily volumes: {', '.join(filled_daily_dates[:5])}"
+            if len(filled_daily_dates) > 5:
+                summary += f" ... and {len(filled_daily_dates) - 5} more\n"
+            else:
+                summary += "\n"
+        else:
+            summary += "✓ No missing daily volumes\n"
 
-        # Se oggi è lunedì, crea il riepilogo settimanale (lun-dom) della settimana appena conclusa.
-        if now_rome.weekday() == 0:
-            weekly_data = compute_weekly_sales_volume(db, yesterday_rome)
-            upsert_sales_volume_weekly(db, weekly_data)
-            summary += f"\n[SalesVolumeWeekly] Upserted {weekly_data}"
+        # === FILL MISSING WEEKLY VOLUMES ===
+        filled_weekly_dates = fill_missing_weekly_volumes(db, yesterday_rome)
+        
+        if filled_weekly_dates:
+            summary += f"✓ Filled {len(filled_weekly_dates)} missing weekly volumes: {', '.join(filled_weekly_dates[:5])}"
+            if len(filled_weekly_dates) > 5:
+                summary += f" ... and {len(filled_weekly_dates) - 5} more\n"
+            else:
+                summary += "\n"
+        else:
+            summary += "✓ No missing weekly volumes\n"
 
+        print(summary)
         send_email("✅ [4/5][WORKFLOW] Sales Volume", summary)
         return 0
 
