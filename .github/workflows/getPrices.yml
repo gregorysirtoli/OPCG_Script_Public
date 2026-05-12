@@ -2,8 +2,8 @@ name: Run Prices
 
 on:
   workflow_dispatch: # manual trigger
-  schedule: # esecuzione giornaliera alle 11:00 Europe/Rome
-    - cron: "0 9 * * *" # CEST (UTC+2) -> 11:00 in Italia
+  schedule: # daily exec at 08:00 Europe/Rome
+    - cron: "0 6 * * *" # UTC > CEST (UTC+2) -> 08:00 in Italy
 
 jobs:
   run-batches:
@@ -55,11 +55,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # checkout della repo PRIVATA dei providers
+      # checkout private providers
       - uses: actions/checkout@v4
         with:
-          repository: gregorysirtoli/OPCG_Script_Private # DOVE prendere il codice privato
-          token: ${{ secrets.PROVIDERS_TOKEN }} # PAT con accesso a quella repo
+          repository: gregorysirtoli/OPCG_Script_Private
+          token: ${{ secrets.PROVIDERS_TOKEN }}
           path: private_providers
 
       - uses: actions/setup-python@v5
