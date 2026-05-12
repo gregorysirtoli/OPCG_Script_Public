@@ -513,11 +513,26 @@ def _extract_grade10_total_count(doc: Dict[str, Any]) -> Optional[float]:
         return None
     return _to_number(grade10.get("totalCount"))
 
+
+def _pick_grade10_count_baseline_around(
+    docs: List[Dict[str, Any]],
+    target_dt: datetime,
+    max_days: float,
+) -> Optional[float]:
+    docs_with_count = [doc for doc in docs if _extract_grade10_total_count(doc) is not None]
+    if not docs_with_count:
+        return None
+    baseline_doc = _get_closest_around(docs_with_count, target_dt, max_days=max_days)
+    if not baseline_doc:
+        return None
+    return _extract_grade10_total_count(baseline_doc)
+
 def compute_market_data_for_item(
     prices: List[Dict[str, Any]],
     graded_first: Dict[str, Any],
     psa10_count: Optional[float],
     psa10_count_previous: Optional[float],
+    population_docs: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     latest = prices[0] if prices else None
 
@@ -613,8 +628,43 @@ def compute_market_data_for_item(
         now - timedelta(days=30),
         max_days=7,
     )
+    psa10_90d_usd = _pick_baseline_value_around(
+        prices,
+        "psa10",
+        now - timedelta(days=90),
+        max_days=14,
+    )
+    psa10_180d_usd = _pick_baseline_value_around(
+        prices,
+        "psa10",
+        now - timedelta(days=180),
+        max_days=56,
+    )
 
     psa10_percentage_change_30d = _calc_pct_change(psa10_usd, psa10_30d_usd)
+    psa10_percentage_change_90d = _calc_pct_change(psa10_usd, psa10_90d_usd)
+    psa10_percentage_change_180d = _calc_pct_change(psa10_usd, psa10_180d_usd)
+
+    count_docs = population_docs or []
+    psa10_count_30d = _pick_grade10_count_baseline_around(
+        count_docs,
+        now - timedelta(days=30),
+        max_days=7,
+    )
+    psa10_count_90d = _pick_grade10_count_baseline_around(
+        count_docs,
+        now - timedelta(days=90),
+        max_days=14,
+    )
+    psa10_count_180d = _pick_grade10_count_baseline_around(
+        count_docs,
+        now - timedelta(days=180),
+        max_days=56,
+    )
+
+    psa10_count_percentage_change_30d = _calc_pct_change(psa10_count, psa10_count_30d)
+    psa10_count_percentage_change_90d = _calc_pct_change(psa10_count, psa10_count_90d)
+    psa10_count_percentage_change_180d = _calc_pct_change(psa10_count, psa10_count_180d)
     psa10_count_percentage_change = _calc_pct_change(psa10_count, psa10_count_previous)
 
     # gradingProfit percent (%)
@@ -664,21 +714,33 @@ def compute_market_data_for_item(
         "cmAvg30d": _as_number_or_none((latest or {}).get("cmAvg30d")), # USD
         "priceRedLine": _as_number_or_none(price_redline), # USD
 
-        "psa10": _as_number_or_none(psa10_usd), # USD
-        "bgs10": _as_number_or_none(bsg10_usd), # USD
         "sgc10": _as_number_or_none(sgc10_usd), # USD
         "cgc10": _as_number_or_none(cgc10_usd), # USD
         "cgc10pristine": _as_number_or_none(cgc10pristine_usd), # USD
-        "bsg10black": _as_number_or_none(bsg10black_usd), # USD
         "tag10": _as_number_or_none(tag10_usd), # USD
         "ace10": _as_number_or_none(ace10_usd), # USD
-        "psa10Count": _as_number_or_none(psa10_count),
-
+        
+        "psa10": _as_number_or_none(psa10_usd), # USD
+        "psa10At30d": _as_number_or_none(psa10_30d_usd), # USD
+        "psa10At90d": _as_number_or_none(psa10_90d_usd), # USD
+        "psa10At180d": _as_number_or_none(psa10_180d_usd), # USD
+        
         "psa10PercentageChange30d": psa10_percentage_change_30d, # %
+        "psa10PercentageChange90d": psa10_percentage_change_90d, # %
+        "psa10PercentageChange180d": psa10_percentage_change_180d, # %
+        "psa10Count": _as_number_or_none(psa10_count),
+        "psa10Count30d": _as_number_or_none(psa10_count_30d),
+        "psa10Count90d": _as_number_or_none(psa10_count_90d),
+        "psa10Count180d": _as_number_or_none(psa10_count_180d),
+        "psa10CountPercentageChange30d": psa10_count_percentage_change_30d, # %
+        "psa10CountPercentageChange90d": psa10_count_percentage_change_90d, # %
+        "psa10CountPercentageChange180d": psa10_count_percentage_change_180d, # %
         "psa10CountPercentageChange": psa10_count_percentage_change, # %
+        "psa10GradingProfit": gp_psa10, # %
 
-        "gradingProfitPsa10": gp_psa10, # %
-        "gradingProfitBsg10": gp_bsg10, # %
+        "bgs10": _as_number_or_none(bsg10_usd), # USD
+        "bsg10black": _as_number_or_none(bsg10black_usd), # USD
+        "bgs10GradingProfit": gp_bsg10, # %
 
         # reference prices (baseline)
         "price1d": price_1d,
@@ -1591,6 +1653,7 @@ def update_cards_market_data(
             graded_first.get(cid, {}),
             psa10_count,
             psa10_count_previous,
+            population_history_by_card.get(cid, []),
         )
         touched += 1
         if any(v is not None for v in md.values()):
