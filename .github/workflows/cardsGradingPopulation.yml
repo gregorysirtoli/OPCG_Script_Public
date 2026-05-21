@@ -3,11 +3,10 @@ name: Run PSA Cards Grading Population
 on:
   workflow_dispatch:
   schedule:
-    # Runs every Sunday at 23:00 America/New_York (Sunday)
-    # Runs every Sunday at 23:00 Italy (CET/CEST)
+    # Runs every Friday at 06:00 Italy (CET/CEST)
     # There are two cron schedules to cover both time zones.
-    - cron: "0 23 * * 0" # Sunday 23:00 America/New_York
-    - cron: "0 21 * * 0" # Sunday 23:00 Italy (CET/CEST = UTC+1/UTC+2)
+    - cron: "0 5 * * 5" # Friday 06:00 Italy (CET = UTC+1)
+    - cron: "0 4 * * 5" # Friday 06:00 Italy (CEST = UTC+2)
 
 jobs:
   run-cards-grading-population:
