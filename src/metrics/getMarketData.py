@@ -527,6 +527,17 @@ def _pick_grade10_count_baseline_around(
         return None
     return _extract_grade10_total_count(baseline_doc)
 
+
+def _extract_latest_psa_gem_rate(docs: List[Dict[str, Any]]) -> Optional[float]:
+    for doc in docs:
+        provider = str(doc.get("gradingProvider") or "").strip().lower()
+        if provider and provider != "psa":
+            continue
+        gem_rate = _to_number(doc.get("gemRate"))
+        if gem_rate is not None:
+            return _round2(gem_rate)
+    return None
+
 def compute_market_data_for_item(
     prices: List[Dict[str, Any]],
     graded_first: Dict[str, Any],
@@ -646,6 +657,7 @@ def compute_market_data_for_item(
     psa10_percentage_change_180d = _calc_pct_change(psa10_usd, psa10_180d_usd)
 
     count_docs = population_docs or []
+    psa10_gem_rate = _extract_latest_psa_gem_rate(count_docs)
     psa10_count_30d = _pick_grade10_count_baseline_around(
         count_docs,
         now - timedelta(days=30),
@@ -729,6 +741,7 @@ def compute_market_data_for_item(
         "psa10PercentageChange90d": psa10_percentage_change_90d, # %
         "psa10PercentageChange180d": psa10_percentage_change_180d, # %
         "psa10Count": _as_number_or_none(psa10_count),
+        "psa10GemRate": _as_number_or_none(psa10_gem_rate),
         "psa10Count30d": _as_number_or_none(psa10_count_30d),
         "psa10Count90d": _as_number_or_none(psa10_count_90d),
         "psa10Count180d": _as_number_or_none(psa10_count_180d),
@@ -1620,6 +1633,8 @@ def update_cards_market_data(
             "cardId": 1,
             "createdAt": 1,
             "grade10.totalCount": 1,
+            "gemRate": 1,
+            "gradingProvider": 1,
         },
     ).sort([("cardId", 1), ("createdAt", -1)])
 
