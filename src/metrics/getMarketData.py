@@ -538,11 +538,17 @@ def _extract_latest_psa_gem_rate(docs: List[Dict[str, Any]]) -> Optional[float]:
             return _round2(gem_rate)
     return None
 
+
+def _extract_cards_metrics_growth_value(doc: Dict[str, Any]) -> Optional[float]:
+    value = _to_number(doc.get("growthRate"))
+    return _round2(value) if value is not None else None
+
 def compute_market_data_for_item(
     prices: List[Dict[str, Any]],
     graded_first: Dict[str, Any],
     psa10_count: Optional[float],
     psa10_count_previous: Optional[float],
+    psa10_growth_rate: Optional[float] = None,
     population_docs: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     latest = prices[0] if prices else None
@@ -741,7 +747,8 @@ def compute_market_data_for_item(
         "psa10PercentageChange90d": psa10_percentage_change_90d, # %
         "psa10PercentageChange180d": psa10_percentage_change_180d, # %
         "psa10Count": _as_number_or_none(psa10_count),
-        "psa10GemRate": _as_number_or_none(psa10_gem_rate),
+        "psa10GemRate": _as_number_or_none(psa10_gem_rate), # %
+        "psa10GrowthRate": _as_number_or_none(psa10_growth_rate), # %
         "psa10Count30d": _as_number_or_none(psa10_count_30d),
         "psa10Count90d": _as_number_or_none(psa10_count_90d),
         "psa10Count180d": _as_number_or_none(psa10_count_180d),
@@ -1606,22 +1613,29 @@ def update_cards_market_data(
 
     # CardsMetrics fallback: if a card has no psa10 in Prices, use latestPrice from the most recent CardsMetrics doc.
     coll_cards_metrics = db["CardsMetrics"]
-    cards_metrics_latest: Dict[str, float] = {}
+    cards_metrics_latest: Dict[str, Dict[str, Optional[float]]] = {}
     for doc in coll_cards_metrics.find(
         {"cardId": {"$in": ids}},
-        {"cardId": 1, "createdAt": 1, "latestPrice": 1},
+        {
+            "cardId": 1,
+            "createdAt": 1,
+            "latestPrice": 1,
+            "growthRate": 1,
+        },
     ).sort("createdAt", -1):
         card_id = doc.get("cardId")
         latest_price = doc.get("latestPrice")
         if isinstance(card_id, str) and card_id not in cards_metrics_latest:
             v = _to_number(latest_price)
-            if v is not None:
-                cards_metrics_latest[card_id] = v
+            cards_metrics_latest[card_id] = {
+                "latestPrice": v,
+                "psa10GrowthRate": _extract_cards_metrics_growth_value(doc),
+            }
 
     # Merge CardsMetrics latestPrice as psa10 fallback into graded_first.
     for cid in ids:
         if _to_number((graded_first.get(cid) or {}).get("psa10")) is None:
-            fallback = cards_metrics_latest.get(cid)
+            fallback = (cards_metrics_latest.get(cid) or {}).get("latestPrice")
             if fallback is not None:
                 graded_first.setdefault(cid, {})["psa10"] = fallback
 
@@ -1663,11 +1677,13 @@ def update_cards_market_data(
     for cid in ids:
         prices = per_item.get(cid, [])
         psa10_count, psa10_count_previous = population_latest_prev_count.get(cid, (None, None))
+        psa10_growth_rate = (cards_metrics_latest.get(cid) or {}).get("psa10GrowthRate")
         md = compute_market_data_for_item(
             prices,
             graded_first.get(cid, {}),
             psa10_count,
             psa10_count_previous,
+            psa10_growth_rate,
             population_history_by_card.get(cid, []),
         )
         touched += 1
