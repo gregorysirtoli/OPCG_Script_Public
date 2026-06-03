@@ -96,6 +96,16 @@ def _week_bounds_rome(target: datetime) -> Tuple[datetime, datetime]:
     return _to_utc(week_start_rome), _to_utc(sunday_rome)
 
 
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _week_start_key(dt: datetime) -> datetime:
+    return _as_utc(dt).replace(tzinfo=None)
+
+
 # =============================== CORE ====================================
 def compute_daily_sales_volume(db, day_rome: datetime) -> Dict[str, Any]:
     # 1) Day bounds (UTC) for day and previous day
@@ -347,58 +357,59 @@ def fill_missing_daily_volumes(db, last_date: Optional[datetime], until_date: da
     return filled_dates
 
 
+def _last_completed_week_end(until_date: datetime) -> datetime:
+    """Return the last weekEnd that is fully covered by daily data up to until_date."""
+    _, until_day_end = _day_bounds_rome(until_date)
+    week_start, week_end = _week_bounds_rome(until_date)
+    if week_end <= until_day_end:
+        return week_end
+
+    previous_week_day = week_start.astimezone(EUROPE_ROME) - timedelta(days=1)
+    _, previous_week_end = _week_bounds_rome(previous_week_day)
+    return previous_week_end
+
+
 def fill_missing_weekly_volumes(db, until_date: datetime) -> List[str]:
     """
-    Fill missing SalesVolumeWeekly entries up to until_date.
+    Fill missing SalesVolumeWeekly entries for completed weeks up to until_date.
     Returns list of filled week starts.
     """
     filled_weeks = []
     coll_w: Collection = db["SalesVolumeWeekly"]
+    coll_sv: Collection = db["SalesVolume"]
 
-    # Get the last week end
-    last_week_result = coll_w.find_one(sort=[("weekEnd", -1)], projection={"weekEnd": 1})
-    
-    if last_week_result is None:
-        # No weekly data, start from 12 weeks ago
-        start_date = until_date - timedelta(weeks=12)
-    else:
-        # Start from the day after last weekEnd
-        last_week_end = last_week_result["weekEnd"]
-        if last_week_end.tzinfo is None:
-            last_week_end = last_week_end.replace(tzinfo=timezone.utc).astimezone(EUROPE_ROME)
-        else:
-            last_week_end = last_week_end.astimezone(EUROPE_ROME)
-        start_date = last_week_end + timedelta(days=1)
+    first_daily = coll_sv.find_one(sort=[("date", 1)], projection={"date": 1})
+    if first_daily is None:
+        return filled_weeks
 
-    # Ensure proper timezone
-    if start_date.tzinfo is None:
-        start_date = start_date.replace(tzinfo=EUROPE_ROME)
-
-    # Generate all missing weeks
+    last_completed_week_end = _last_completed_week_end(until_date)
+    start_date = _as_utc(first_daily["date"]).astimezone(EUROPE_ROME)
     current_day = start_date.replace(hour=12, minute=0, second=0, microsecond=0)
-    until_day = until_date.replace(hour=12, minute=0, second=0, microsecond=0)
 
-    # Track processed weeks to avoid duplicates
+    # Weekly records must represent completed weeks only.
+    coll_w.delete_many({"weekEnd": {"$gt": last_completed_week_end}})
+
+    # Track processed weeks to avoid duplicates and skip records that already exist.
     processed_weeks = set()
     for doc in coll_w.find({}, {"weekStart": 1}):
         week_start = doc.get("weekStart")
-        if week_start:
-            processed_weeks.add(week_start)
+        if isinstance(week_start, datetime):
+            processed_weeks.add(_week_start_key(week_start))
 
-    while current_day <= until_day:
-        # Get week boundaries
+    while True:
         week_start, week_end = _week_bounds_rome(current_day)
-        
-        # Check if this week has already been processed
-        if week_start not in processed_weeks:
-            # Compute and upsert
+
+        if week_end > last_completed_week_end:
+            break
+
+        week_key = _week_start_key(week_start)
+        if week_key not in processed_weeks:
             data = compute_weekly_sales_volume(db, current_day)
             upsert_sales_volume_weekly(db, data)
             filled_weeks.append(week_start.astimezone(EUROPE_ROME).date().isoformat())
-            processed_weeks.add(week_start)
+            processed_weeks.add(week_key)
 
-        # Increment to next day (will process each week once when hitting any day in that week)
-        current_day += timedelta(days=1)
+        current_day = week_start.astimezone(EUROPE_ROME) + timedelta(days=7, hours=12)
 
     return filled_weeks
 
