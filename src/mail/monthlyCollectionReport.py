@@ -7,6 +7,8 @@ from bson import ObjectId
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
+from core.notifications import enqueue_notification, ensure_notification_indexes
+
 # =============================================================================
 # Environment & constants
 # =============================================================================
@@ -193,6 +195,10 @@ def enqueue_mail(db, subject: str, body: str, to: str, user_id: ObjectId) -> Non
             "reportType": "monthlyCollection",
         }
     )
+
+
+def build_notification_text(month_label: str) -> str:
+    return f"Your monthly collection report for {month_label} is ready. Check your email for details!"
 
 
 def get_user_holdings(db, user_doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -424,6 +430,7 @@ def should_send_report(db, user_doc: dict[str, Any], user_id: ObjectId, now: dat
 def main() -> None:
     client = MongoClient(MONGO_URI)
     db = client[MONGODB_DB]
+    ensure_notification_indexes(db)
 
     now = datetime.now(timezone.utc)
 
@@ -575,6 +582,7 @@ def main() -> None:
         subject = f"[RED LINE] 🔔 Monthly Collection Report - {month_label}"
 
         enqueue_mail(db=db, subject=subject, body=body, to=to_email, user_id=user_id)
+        enqueue_notification(db, user_id, build_notification_text(month_label))
 
         db[SNAPSHOT_COLLECTION].update_one(
             {"userId": user_id, "asOf": now},
