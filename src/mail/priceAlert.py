@@ -87,6 +87,15 @@ def enqueue_mail(
     })
 
 
+def enqueue_notification(db, user_id, notification_text: str) -> None:
+    db.Notification.insert_one({
+        "userId": user_id,
+        "createdAt": datetime.now(timezone.utc),
+        "readAt": None,
+        "notificationText": notification_text,
+    })
+
+
 def random_scheduled_at(now_utc: datetime) -> datetime:
     delay_minutes = random.randint(0, MAX_RANDOM_DELAY_MINUTES)
     return now_utc + timedelta(minutes=delay_minutes)
@@ -284,6 +293,13 @@ def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
     )
 
 
+def build_notification_text(item: dict) -> str:
+    return (
+        f"{item['cleanName']} #{item['localId']} has reached your price alert! Actual price is "
+        f"{format_money(item['hitPrice'])}"
+    )
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -361,6 +377,7 @@ async def main() -> None:
         subject = f"[RED LINE] 🔔 {item['cleanName']} #{item['localId']} has a new price!"
         body = build_single_body(to_email, item, now)
         enqueue_mail(db, subject, body, to_email, user_id, item["alertId"], scheduled_at=scheduled_at)
+        enqueue_notification(db, user_id, build_notification_text(item))
         queued_count += 1
         notified_alert_ids.append(item["alertId"])
         alerts_by_id[item["alertId"]] = item["alert"]
