@@ -11,7 +11,7 @@ from bson import ObjectId
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-from core.notifications import enqueue_notification, ensure_notification_indexes
+from src.core.notifications import enqueue_notification, ensure_notification_indexes
 
 # =============================================================================
 # Environment & constants
