@@ -96,6 +96,17 @@ def enqueue_notification(db, user_id, notification_text: str) -> None:
     })
 
 
+def ensure_notification_indexes(db) -> None:
+    db.Notification.create_index(
+        [("userId", 1), ("readAt", 1), ("createdAt", -1)],
+        name="idx_notification_user_read_created",
+    )
+    db.Notification.create_index(
+        [("userId", 1), ("createdAt", -1)],
+        name="idx_notification_user_created",
+    )
+
+
 def random_scheduled_at(now_utc: datetime) -> datetime:
     delay_minutes = random.randint(0, MAX_RANDOM_DELAY_MINUTES)
     return now_utc + timedelta(minutes=delay_minutes)
@@ -307,6 +318,7 @@ def build_notification_text(item: dict) -> str:
 async def main() -> None:
     client = MongoClient(MONGO_URI)
     db = client[MONGODB_DB]
+    ensure_notification_indexes(db)
 
     alerts = list(db.PricesAlert.aggregate([
         {
