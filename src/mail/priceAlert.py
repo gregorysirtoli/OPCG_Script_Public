@@ -261,7 +261,7 @@ def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
         "we have good news for you! <br><br>"
         "One of the cards you have been looking for has reached your price conditions.<br><br>"
         f"<b>{item['cleanName']} #{item['localId']}</b> card is currently at "
-        f"<b>{format_money(item['hitPrice'])}</b> ({item['hitLabel']}).<br><br>"
+        f"<b>{format_money(item['hitPrice'])}</b>.<br><br>"
         "Don't miss this opportunity!<br>"
         "<ul>"
         f"<li>Check it out on <a href='{links['cardmarket']}'>Cardmarket</a></li>"
