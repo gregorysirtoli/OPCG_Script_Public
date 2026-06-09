@@ -234,7 +234,7 @@ if __name__ == "__main__":
         OP_IDS_EN = [
             "OP01", "OP02", "OP03", "OP04", "OP05", "OP06",
             "OP07", "OP08", "OP09", "OP10", "OP11", "OP12",
-            "OP13", "OP14", "OP15", "OP16"
+            "OP13", "OP14", "OP15", "OP16",
             "EB01", "EB02", "EB03", 
             "PRB01", "PRB02"
         ]
@@ -254,7 +254,7 @@ if __name__ == "__main__":
         OP_IDS_JP = [
             "OP01JP", "OP02JP", "OP03JP", "OP04JP", "OP05JP", "OP06JP",
             "OP07JP", "OP08JP", "OP09JP", "OP10JP", "OP11JP", "OP12JP",
-            "OP13JP", "OP14JP", "OP15JP", "OP16JP"
+            "OP13JP", "OP14JP", "OP15JP", "OP16JP",
             "EB01JP", "EB02JP", "EB03JP", "EB04JP", 
             "PRB01JP", "PRB02JP"
         ]
