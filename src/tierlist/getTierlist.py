@@ -80,6 +80,27 @@ def tier_by_test_ratio(test_ratio: float) -> str:
     return "C"
 
 
+MERGED_SET_RULES: Dict[str, List[str]] = {
+    "OP01E": ["OP01", "OP01E"],
+}
+
+
+def resolve_card_set_ids(set_id: str, requested_set_ids: List[str]) -> Optional[List[str]]:
+    for canonical_set_id, member_set_ids in MERGED_SET_RULES.items():
+        if set_id not in member_set_ids:
+            continue
+        if canonical_set_id not in requested_set_ids:
+            continue
+
+        # Il set canonico usa il merge; gli altri membri restano autonomi.
+        if set_id != canonical_set_id:
+            return [set_id]
+
+        return member_set_ids
+
+    return [set_id]
+
+
 # ============================================================
 # CORE BUILDER (tiers + report_rows)
 # ============================================================
@@ -101,21 +122,40 @@ def build_tierlist(
             {"id": 1, "name": 1, "sealedId": 1}
         )
     )
+    sets_by_id = {
+        str(s.get("id") or ""): s
+        for s in sets
+        if str(s.get("id") or "")
+    }
 
     cards_col = db.Cards
 
     for s in sets:
         set_id = s.get("id")
         set_name = s.get("name")
-        sealed_id = s.get("sealedId")
         if not set_id:
             continue
+
+        card_set_ids = resolve_card_set_ids(str(set_id), set_ids)
+        if not card_set_ids:
+            continue
+
+        sealed_id = s.get("sealedId")
+        if not sealed_id and len(card_set_ids) > 1:
+            for member_set_id in card_set_ids:
+                member_set = sets_by_id.get(member_set_id)
+                if member_set and member_set.get("sealedId"):
+                    sealed_id = member_set.get("sealedId")
+                    break
 
         # Costo box (da Prices, default 200)
         box_cost = get_box_cost(db, sealed_id, default_cost=200.0)
 
         # Query carte
-        q = {"setId": set_id, "type": "Cards"}
+        if len(card_set_ids) > 1:
+            q = {"setId": {"$in": card_set_ids}, "type": "Cards"}
+        else:
+            q = {"setId": set_id, "type": "Cards"}
         if only_visible:
             q["visible"] = True
 
@@ -232,7 +272,7 @@ if __name__ == "__main__":
         # ---------------- EN ----------------
         #print("\n✅ [TIERLIST] GLOBAL (EN)")
         OP_IDS_EN = [
-            "OP01", "OP02", "OP03", "OP04", "OP05", "OP06",
+            "OP01E", "OP01", "OP02", "OP03", "OP04", "OP05", "OP06",
             "OP07", "OP08", "OP09", "OP10", "OP11", "OP12",
             "OP13", "OP14", "OP15", "OP16",
             "EB01", "EB02", "EB03", 
