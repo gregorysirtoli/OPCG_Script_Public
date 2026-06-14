@@ -1650,12 +1650,18 @@ def update_cards_market_data(
             "gemRate": 1,
             "gradingProvider": 1,
         },
-    ).sort([("cardId", 1), ("createdAt", -1)])
+    )
 
     for population_doc in population_cursor:
         card_id = population_doc.get("cardId")
         if isinstance(card_id, str):
             population_history_by_card.setdefault(card_id, []).append(population_doc)
+
+    for docs in population_history_by_card.values():
+        docs.sort(
+            key=lambda d: d.get("createdAt") or datetime.min,
+            reverse=True,
+        )
 
     for cid, docs in population_history_by_card.items():
         latest_count: Optional[float] = None
