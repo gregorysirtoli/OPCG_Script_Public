@@ -1,0 +1,40 @@
+name: Monthly Tierlist Generation
+
+on:
+  workflow_dispatch: # manual trigger
+  schedule: # esecuzione ogni 1° del mese alle 09:00 UTC (10:00-11:00 Europe/Rome)
+    - cron: "0 9 1 * *"
+
+jobs:
+  generate-tierlist:
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Variabili richieste dallo script
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
+      GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
+      TIERLIST_LANGUAGE: en
+      INSTAGRAM_POST_INITIAL_STATUS: draft
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+
+      - name: Generate Tierlist
+        run: |
+          python -m src.instagram.tierlist
