@@ -1,40 +1,54 @@
-"""
-Orchestrator for generating One Piece TCG tierlist Instagram posts.
-
-Public-facing interface that coordinates the complete workflow:
-1. Fetch card grading/market data
-2. Generate or fetch tierlist from MongoDB
-3. Render tierlist image using private_providers
-4. Upload to GCS
-
-Font and image resources are located in private_providers/ for unified management.
-"""
-
 import os
 import sys
+import importlib
+import traceback
+import time
 from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-
-from private_providers.instagram.generateTierlist import format_month_year
-
-# Add private_providers to path so we can import generateTierlist
+from src.core.emailer import send_email
 ROOT_DIR = Path(__file__).resolve().parents[2]
-PRIVATE_PROVIDERS_PATH = ROOT_DIR / "private_providers" / "instagram"
-sys.path.insert(0, str(PRIVATE_PROVIDERS_PATH))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-import generateTierlist as tierlist_gen
+
+def load_provider_module(module_name: str):
+    module = importlib.import_module(module_name)
+    required = [
+        "fetch_latest_tierlist",
+        "render_tierlist_post",
+        "build_caption",
+        "upload_images_to_gcs",
+        "save_post_manifest_to_mongodb",
+        "format_month_year",
+        "LAYOUT_VERSION",
+        "MONGODB_TIERLIST_COLLECTION",
+        "MAIN_TITLE",
+    ]
+    missing = [name for name in required if not hasattr(module, name)]
+    if missing:
+        raise AttributeError(f"Module {module_name!r} missing required attributes: {', '.join(missing)}")
+    return module
 
 
 def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -> dict[str, Any]:
+    from private_providers import bundle as providers_bundle
+
+    module_name = getattr(
+        providers_bundle,
+        "TIERLIST_MODULE",
+        "private_providers.instagram.generateTierlist",
+    )
+    tierlist_gen = load_provider_module(module_name)
+
     print(f"[Orchestrator] Starting tierlist generation workflow")
     print(f"[Orchestrator] MongoDB URI: {mongo_uri}")
     print(f"[Orchestrator] Database: {db_name}")
     print(f"[Orchestrator] Language: {language}")
+    print(f"[Orchestrator] Provider module: {module_name}")
 
-    # Step 1: Fetch latest tierlist from MongoDB
     print(f"[Orchestrator] Fetching latest tierlist from MongoDB...")
     try:
         tierlist_doc = tierlist_gen.fetch_latest_tierlist(mongo_uri, db_name, language=language)
@@ -43,7 +57,6 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
         print(f"[Orchestrator] ✗ Failed to fetch tierlist: {e}")
         raise
 
-    # Step 2: Render tierlist image in memory
     print(f"[Orchestrator] Rendering tierlist image...")
     try:
         image_bytes = tierlist_gen.render_tierlist_post(tierlist_doc)
@@ -52,7 +65,6 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
         print(f"[Orchestrator] ✗ Failed to render image: {e}")
         raise
 
-    # Step 3: Generate caption
     print(f"[Orchestrator] Generating caption...")
     try:
         caption = tierlist_gen.build_caption(tierlist_doc)
@@ -61,9 +73,8 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
         print(f"[Orchestrator] ✗ Failed to generate caption: {e}")
         raise
 
-    month_year = format_month_year(tierlist_doc.get("date"))
+    month_year = tierlist_gen.format_month_year(tierlist_doc.get("date"))
 
-    # Step 4: Build manifest payload
     print(f"[Orchestrator] Building manifest payload...")
     content = {
         "title": f"Tierlist - {month_year}",
@@ -109,7 +120,6 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
     }
     print(f"[Orchestrator] ✓ Manifest payload built")
 
-    # Step 5: Upload images to GCS
     print(f"[Orchestrator] Uploading images to Google Cloud Storage...")
     try:
         storage_payload = tierlist_gen.upload_images_to_gcs([image_bytes], tierlist_doc)
@@ -121,7 +131,6 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
         print(f"[Orchestrator] ✗ Failed to upload to GCS: {e}")
         raise
 
-    # Step 6: Save manifest and post document to MongoDB
     print(f"[Orchestrator] Saving post manifest to MongoDB...")
     try:
         mongo_payload = tierlist_gen.save_post_manifest_to_mongodb(mongo_uri, db_name, manifest_payload)
@@ -143,26 +152,41 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
 
 
 if __name__ == "__main__":
-    # Load environment variables from .env files (in order of precedence)
     load_dotenv(ROOT_DIR / ".env.local")
     load_dotenv(ROOT_DIR / ".env")
     load_dotenv()
-    
-    # Example usage
-    mongo_uri = os.getenv("MONGODB_URI")
-    db_name = os.getenv("MONGODB_DB")
 
-    if not mongo_uri or not db_name:
-        print("Error: MONGODB_URI and MONGODB_DB environment variables required")
-        sys.exit(1)
+    start_time = time.time()
+    start_dt = datetime.now()
 
     try:
+        mongo_uri = os.getenv("MONGODB_URI")
+        db_name = os.getenv("MONGODB_DB")
+
+        if not mongo_uri or not db_name:
+            raise RuntimeError("MONGODB_URI and MONGODB_DB environment variables required")
+
         result = generate_tierlist_post(mongo_uri, db_name)
         print("\nFinal Result:")
         print(f"  Layout: {result['layout_version']}")
         print(f"  GCS Bucket: {result['gcs_bucket']}")
         print(f"  Uploaded Images: {len(result['storage_images'])}")
         print(f"  MongoDB ID: {result['mongodb']['insertedId']}")
+
+        end_time = time.time()
+        end_dt = datetime.now()
+        elapsed = end_time - start_time
+        minutes = elapsed / 60.0
+
+        subject = "✅ [1/1][INSTAGRAM] Tierlist generation completed"
+        body = (
+            f"Start: {start_dt:%Y-%m-%d %H:%M:%S}\n"
+            f"End:   {end_dt:%Y-%m-%d %H:%M:%S}\n"
+            f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)\n"
+            "Exit code: 0"
+        )
+        send_email(subject, body)
     except Exception as e:
+        send_email("🚫 [1/1][INSTAGRAM] Tierlist generation failed", traceback.format_exc())
         print(f"\nFatal Error: {e}", file=sys.stderr)
         sys.exit(1)

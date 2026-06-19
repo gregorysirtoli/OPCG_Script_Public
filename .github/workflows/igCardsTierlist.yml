@@ -1,12 +1,12 @@
-name: Monthly Tierlist Generation
+name: Monthly Cards Tierlist Generation
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 9 1 * *"
+    - cron: "0 13 * * 2,5"
 
 jobs:
-  generate-tierlist:
+  generate-cards-tierlist:
     runs-on: ubuntu-24.04
 
     env:
@@ -15,7 +15,9 @@ jobs:
       MONGODB_DB: ${{ secrets.MONGODB_DB }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
-      TIERLIST_LANGUAGE: en
+      AI_GATEWAY_BASE_URL: ${{ secrets.AI_GATEWAY_BASE_URL }}
+      AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+      AI_GATEWAY_MODEL: ${{ secrets.AI_GATEWAY_MODEL }}
       INSTAGRAM_POST_INITIAL_STATUS: draft
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
@@ -43,6 +45,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Generate Tierlist
+      - name: Generate Cards Tierlist
         run: |
-          python -m src.instagram.tierlist
+          python -m src.instagram.cards_tierlist
