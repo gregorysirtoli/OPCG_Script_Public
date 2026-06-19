@@ -1,6 +1,5 @@
 import os
 import sys
-import importlib
 import traceback
 import time
 from pathlib import Path
@@ -14,40 +13,14 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-def load_provider_module(module_name: str):
-    module = importlib.import_module(module_name)
-    required = [
-        "fetch_latest_tierlist",
-        "render_tierlist_post",
-        "build_caption",
-        "upload_images_to_gcs",
-        "save_post_manifest_to_mongodb",
-        "format_month_year",
-        "LAYOUT_VERSION",
-        "MONGODB_TIERLIST_COLLECTION",
-        "MAIN_TITLE",
-    ]
-    missing = [name for name in required if not hasattr(module, name)]
-    if missing:
-        raise AttributeError(f"Module {module_name!r} missing required attributes: {', '.join(missing)}")
-    return module
-
-
 def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -> dict[str, Any]:
-    from private_providers import bundle as providers_bundle
-
-    module_name = getattr(
-        providers_bundle,
-        "TIERLIST_MODULE",
-        "private_providers.instagram.generateTierlist",
-    )
-    tierlist_gen = load_provider_module(module_name)
+    from private_providers.instagram import generateTierlist as tierlist_gen
 
     print(f"[Orchestrator] Starting tierlist generation workflow")
     print(f"[Orchestrator] MongoDB URI: {mongo_uri}")
     print(f"[Orchestrator] Database: {db_name}")
     print(f"[Orchestrator] Language: {language}")
-    print(f"[Orchestrator] Provider module: {module_name}")
+    print("[Orchestrator] Provider module: private_providers.instagram.generateTierlist")
 
     print(f"[Orchestrator] Fetching latest tierlist from MongoDB...")
     try:
