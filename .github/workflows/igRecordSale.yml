@@ -23,13 +23,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Checkout private providers repo
-        uses: actions/checkout@v4
-        with:
-          repository: gregorysirtoli/OPCG_Script_Private
-          token: ${{ secrets.PROVIDERS_TOKEN }}
-          path: private_providers
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
