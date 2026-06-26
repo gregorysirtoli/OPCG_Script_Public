@@ -1,4 +1,4 @@
-name: Big Pump Generation
+name: IG - Big Pump Generation
 
 on:
   workflow_dispatch:

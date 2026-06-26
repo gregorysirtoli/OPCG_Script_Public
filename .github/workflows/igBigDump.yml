@@ -1,4 +1,4 @@
-name: Big Dump Generation
+name: IG - Big Dump Generation
 
 on:
   workflow_dispatch:

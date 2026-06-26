@@ -1,4 +1,4 @@
-name: Monthly Tierlist Generation
+name: IG - Tierlist
 
 on:
   workflow_dispatch:

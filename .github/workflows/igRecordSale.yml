@@ -1,4 +1,4 @@
-name: Record Sale Generation
+name: IG - Record Sale
 
 on:
   workflow_dispatch:

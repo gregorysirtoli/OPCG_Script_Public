@@ -1,4 +1,4 @@
-name: Monthly Cards Tierlist Generation
+name: IG - Tierlist (cards)
 
 on:
   workflow_dispatch:
