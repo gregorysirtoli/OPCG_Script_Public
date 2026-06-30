@@ -2,6 +2,8 @@ name: IG - Record Sale
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 17 * * 5"
 
 jobs:
   generate-record-sale:
