@@ -25,6 +25,13 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Checkout private providers
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_PROVIDERS_REPO }}
+          token: ${{ secrets.PRIVATE_PROVIDERS_TOKEN }}
+          path: private_providers
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
