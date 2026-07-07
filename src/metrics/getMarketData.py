@@ -1508,10 +1508,12 @@ def update_cards_market_data(
     db: Database,
     days_back: int = 400,
     limit_ids: Optional[List[str]] = None,
+    sales_db: Optional[Database] = None,
 ) -> Tuple[int, int, int, int]:
+    _sales_db = sales_db if sales_db is not None else db
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
-    coll_cards_grading_population = db["CardsGradingPopulation"]
+    coll_cards_grading_population = _sales_db["CardsGradingPopulation"]
 
     q_cards: Dict[str, Any] = {}
     #q_cards["setId"] = "OP13"
@@ -1612,7 +1614,7 @@ def update_cards_market_data(
             }
 
     # CardsMetrics fallback: if a card has no psa10 in Prices, use latestPrice from the most recent CardsMetrics doc.
-    coll_cards_metrics = db["CardsMetrics"]
+    coll_cards_metrics = _sales_db["CardsMetrics"]
     cards_metrics_latest: Dict[str, Dict[str, Optional[float]]] = {}
     for doc in coll_cards_metrics.find(
         {"cardId": {"$in": ids}},

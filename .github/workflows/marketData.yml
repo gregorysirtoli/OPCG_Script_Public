@@ -16,6 +16,8 @@ jobs:
       PYTHONUNBUFFERED: 1
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
       MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI }}
+      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}

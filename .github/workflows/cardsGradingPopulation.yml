@@ -2,9 +2,9 @@ name: Run PSA Cards Grading Population
 
 on:
   workflow_dispatch:
-  schedule:
-    # Runs every Friday at 06:00 Italy in winter time (CET = UTC+1).
-    - cron: "0 5 * * 5"
+  #schedule:
+  #  # Runs every Friday at 06:00 Italy in winter time (CET = UTC+1).
+  #  - cron: "0 5 * * 5"
 
 concurrency:
   group: cards-grading-population
@@ -18,6 +18,8 @@ jobs:
       PYTHONUNBUFFERED: "1"
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
       MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI }}
+      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB }}
       PSA_COOKIE: ${{ secrets.PSA_COOKIE }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}

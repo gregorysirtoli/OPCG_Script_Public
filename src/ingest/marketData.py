@@ -28,12 +28,16 @@ if __name__ == "__main__":
         client = MongoClient(settings.mongodb_uri, tz_aware=True)
         db = client[settings.mongodb_db]
 
+        sales_client = MongoClient(settings.mongodb_sales_uri, tz_aware=True)
+        sales_db = sales_client[settings.mongodb_sales_db]
+
         ids = []
 
         touched, updated, sets_touched, sets_updated = update_cards_market_data(
             db,
             days_back=477,
             limit_ids=ids,
+            sales_db=sales_db,
         )
         print(f"Cards: {touched}, updated: {updated}")
         print(f"Sets: {sets_touched}, updated: {sets_updated}")
