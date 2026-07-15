@@ -24,7 +24,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install pymongo==4.* dnspython
+        run: pip install pymongo==4.* dnspython python-dotenv
 
       - name: Run mail worker
         env:
