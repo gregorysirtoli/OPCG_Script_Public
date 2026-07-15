@@ -1,0 +1,42 @@
+name: Mail Worker
+
+on:
+  schedule:
+    # Every minute (GitHub Actions minimum is 5 minutes)
+    # Use every 5 minutes as that is the GitHub minimum
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  mail-worker:
+    name: Process mail queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install pymongo==4.* dnspython
+
+      - name: Run mail worker
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ secrets.MONGODB_DB }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          MAIL_WORKER_BATCH: "10"
+          MAIL_WORKER_MAX_RETRIES: "5"
+          MAIL_LOCK_STALE_MINUTES: "15"
+
+        run: python src/mail/worker.py
