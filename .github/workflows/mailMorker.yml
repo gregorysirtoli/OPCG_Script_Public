@@ -1,4 +1,4 @@
-name: Mail Worker
+name: Mail - Worker
 
 on:
   schedule:

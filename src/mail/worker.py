@@ -1,19 +1,4 @@
-#!/usr/bin/env python3
-"""
-Mail Worker - Python equivalent of /api/mail/worker
-Processes queued emails from MongoDB and sends them via SMTP.
-
-Required env vars:
-  MONGODB_URI, MONGODB_DB
-  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD
-Optional:
-  SMPT_FROM            (e.g. "Red Line <no-reply@redline.cards>")
-  MAIL_WORKER_BATCH    (default: 10)
-  MAIL_WORKER_MAX_RETRIES (default: 5)
-  MAIL_LOCK_STALE_MINUTES (default: 15)
-"""
-
-import os
+    import os
 import smtplib
 import sys
 import uuid
@@ -39,7 +24,7 @@ SMTP_HOST     = os.environ["SMTP_HOST"]
 SMTP_PORT     = int(os.environ["SMTP_PORT"])
 SMTP_USER     = os.environ["SMTP_USER"]
 SMTP_PASSWORD = os.environ["SMTP_PASSWORD"]
-MAIL_FROM     = os.environ.get("SMPT_FROM") or os.environ.get("SMTP_FROM") or SMTP_USER
+MAIL_FROM     = os.environ.get("SMTP_FROM") or SMTP_USER
 
 MAX_BATCH          = int(os.environ.get("MAIL_WORKER_BATCH", 10))
 MAX_RETRIES        = int(os.environ.get("MAIL_WORKER_MAX_RETRIES", 5))
