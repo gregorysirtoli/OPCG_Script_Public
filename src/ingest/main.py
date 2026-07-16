@@ -115,13 +115,15 @@ def main() -> int:
     primary = next((p for p in providers if getattr(p, "name", "") == "primary"), None)
     secondary = next((p for p in providers if getattr(p, "name", "") == "secondary"), None)
     third = next((p for p in providers if getattr(p, "name", "") == "third"), None)
+    cardtrader = next((p for p in providers if getattr(p, "name", "") == "cardtrader"), None)
     if not primary:
         logger.warning("Primary provider not found – proceeding without primary.")
     if not secondary:
         logger.warning("Secondary provider not found – proceeding without secondary.")
-
     if not third:
         logger.warning("Third provider not found - proceeding without third provider.")
+    if not cardtrader:
+        logger.warning("CardTrader provider not found - proceeding without cardtrader provider.")
 
     # ===== Query Cards (proiezione minima) =====
     projection = {
@@ -133,6 +135,8 @@ def main() -> int:
         "setId": 1,
         "yuyuteiId": 1,
         "yuyuteiLink": 1,
+        "cardTraderId": 1,
+        "language": 1,
         PRIMARY_ID_FIELD: 1,
         EXTERNAL_URI_FIELD: 1,
         EXTERNAL_ID_FIELD: 1,
@@ -325,7 +329,29 @@ def main() -> int:
                             doc.get("yuyuteiId"),
                             e,
                         )
-
+                # ===== CardTrader =====
+                if cardtrader:
+                    card_trader_id = doc.get("cardTraderId")
+                    language = doc.get("language", "en")
+                    if card_trader_id:
+                        try:
+                            price_cardtrader = cardtrader.fetch_cardtrader_price(
+                                {
+                                    "itemId": item_id,
+                                    "cardTraderId": card_trader_id,
+                                    "language": language,
+                                    "eur_usd": fx,
+                                }
+                            )
+                            if price_cardtrader is not None:
+                                row["priceCardTrader"] = price_cardtrader
+                        except Exception as e:
+                            logger.warning(
+                                "CardTrader error itemId=%s cardTraderId=%s: %s",
+                                item_id,
+                                card_trader_id,
+                                e,
+                            )
                 if len(row.keys()) <= 3:
                     continue
 

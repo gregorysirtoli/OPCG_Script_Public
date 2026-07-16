@@ -165,6 +165,7 @@ def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
         _to_number((doc or {}).get("cmAvg30d")),
         _to_number((doc or {}).get("priceYuyuTei")),
         _to_number((doc or {}).get("pricePriceCharting")),
+        _to_number((doc or {}).get("priceCardTrader")),
     ]
     redline_values = [value for value in redline_values if value is not None]
     return _round2(sum(redline_values) / len(redline_values)) if redline_values else None
@@ -228,6 +229,7 @@ def _pick_market_price(md: Optional[Dict[str, Any]]) -> Optional[float]:
         "priceSecondary",
         "priceTertiary",
         "pricePrimary",
+        "priceCardTrader",
     ):
         value = _to_number(md.get(key))
         if value is not None and value > 0:
@@ -327,7 +329,7 @@ def _best_usd(doc: Dict[str, Any]) -> Optional[float]:
      
     # All prices in USD. If no pricePrimary, use priority fallback.
     for k in ("cmPriceTrend", "priceYuyuTei", "priceUngraded", "pricePriceCharting",
-              "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "cmPriceLow"):
+              "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "cmPriceLow", "priceCardTrader"):
         v = _to_number(doc.get(k))
         if v is not None:
             return v
@@ -469,6 +471,9 @@ def _effective_price_from_snapshot(doc: Optional[Dict[str, Any]]) -> Optional[fl
     low = _to_number(doc.get("cmPriceLow"))
     if low is not None:
         return _safe_round2(low)
+    cardtrader = _to_number(doc.get("priceCardTrader"))
+    if cardtrader is not None:
+        return _safe_round2(cardtrader)
     return None
 
 
@@ -607,6 +612,7 @@ def compute_market_data_for_item(
             price_secondary = v
             break
     price_tertiary = _to_number((latest or {}).get("priceYuyuTei"))
+    price_cardtrader = _to_number((latest or {}).get("priceCardTrader"))
 
     # Spread between cmPriceTrend and cmPriceLow
     cm_trend = _to_number((latest or {}).get("cmPriceTrend"))
@@ -721,6 +727,7 @@ def compute_market_data_for_item(
         "pricePriceCharting": _as_number_or_none((latest or {}).get("pricePriceCharting")), # USD
         "priceSecondary": _as_number_or_none(price_secondary), # USD
         "priceTertiary": _as_number_or_none(price_tertiary), # USD
+        "priceCardTrader": _as_number_or_none(price_cardtrader), # USD
 
         "priceTrend": _as_number_or_none(cm_trend), # USD
         "priceLow": _as_number_or_none(cm_low), # USD
@@ -1401,6 +1408,7 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
                 "createdAt": 1,
                 "pricePrimary": 1,
                 "priceYuyuTei": 1,
+                "priceCardTrader": 1,
                 "cmPriceTrend": 1,
                 "cmAvg30d": 1,
                 "cmAvg7d": 1,
@@ -1433,6 +1441,7 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
                 "cmPriceTrend": 1,
                 "cmPriceLow": 1,
                 "priceYuyuTei": 1,
+                "priceCardTrader": 1,
                 "listings": 1,
             },
         ):
@@ -1540,6 +1549,7 @@ def update_cards_market_data(
             "createdAt": 1,
             "pricePrimary": 1,
             "priceYuyuTei": 1,
+            "priceCardTrader": 1,
             "cmPriceTrend": 1,
             "cmAvg30d": 1,
             "cmAvg7d": 1,
