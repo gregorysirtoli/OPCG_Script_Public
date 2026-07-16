@@ -69,6 +69,7 @@ def prep_prices_daily(prices: pd.DataFrame) -> pd.DataFrame:
     price_fields = [
         "pricePrimary",
         "pricePriceCharting",
+        "priceCardTrader",
         "cmPriceAvg",
         "cmPriceLow",
         "cmAvg7d",
@@ -94,6 +95,7 @@ def prep_prices_daily(prices: pd.DataFrame) -> pd.DataFrame:
         "cmAvg7d",
         "cmAvg30d",
         "cmPriceLow",
+        "priceCardTrader",
     ]
     df[price_priority] = df[price_priority].where(df[price_priority] > 0)
     df["price"] = df[price_priority].bfill(axis=1).iloc[:, 0]

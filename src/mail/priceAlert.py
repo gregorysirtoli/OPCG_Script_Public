@@ -35,6 +35,7 @@ PRICE_FIELDS = (
     "cmAvg7d",
     "cmPriceAvg",
     "cmPriceTrend",
+    "priceCardTrader",
 )
 
 decimal.getcontext().prec = 10

@@ -158,11 +158,13 @@ def main() -> int:
     primary = next((p for p in providers if getattr(p, "name", "") == "primary"), None)
     secondary = next((p for p in providers if getattr(p, "name", "") == "secondary"), None)
     third = next((p for p in providers if getattr(p, "name", "") == "third"), None)
+    cardtrader = next((p for p in providers if getattr(p, "name", "") == "cardtrader"), None)
     logger.info(
-        "Providers ready | primary=%s secondary=%s third=%s",
+        "Providers ready | primary=%s secondary=%s third=%s cardtrader=%s",
         "yes" if primary else "no",
         "yes" if secondary else "no",
         "yes" if third else "no",
+        "yes" if cardtrader else "no",
     )
 
     projection = {
@@ -174,6 +176,8 @@ def main() -> int:
         "setId": 1,
         "yuyuteiId": 1,
         "yuyuteiLink": 1,
+        "cardTraderId": 1,
+        "language": 1,
         "releaseDate": 1,
     }
     for optional_field in (primary_id_field, external_uri_field, external_id_field, cm_id_field):
@@ -346,6 +350,29 @@ def main() -> int:
                             doc.get("yuyuteiId"),
                             exc,
                         )
+
+                if cardtrader:
+                    card_trader_id = doc.get("cardTraderId")
+                    language = doc.get("language", "en")
+                    if card_trader_id:
+                        try:
+                            price_cardtrader = cardtrader.fetch_cardtrader_price(
+                                {
+                                    "itemId": item_id,
+                                    "cardTraderId": card_trader_id,
+                                    "language": language,
+                                    "eur_usd": fx,
+                                }
+                            )
+                            if price_cardtrader is not None:
+                                row["priceCardTrader"] = price_cardtrader
+                        except Exception as exc:
+                            logger.warning(
+                                "CardTrader error itemId=%s cardTraderId=%s: %s",
+                                item_id,
+                                card_trader_id,
+                                exc,
+                            )
 
                 if len(row.keys()) <= 3:
                     continue

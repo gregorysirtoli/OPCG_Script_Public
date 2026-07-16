@@ -44,7 +44,17 @@ def pick_price_from_card(card: Dict[str, Any]) -> Optional[float]:
     if not isinstance(md, dict):
         return None
 
-    for k in ("price", "priceTrend", "price7d", "price30d", "price90d", "price1d", "priceSecondary", "pricePrimary"):
+    for k in (
+        "price",
+        "priceTrend",
+        "price7d",
+        "price30d",
+        "price90d",
+        "price1d",
+        "priceSecondary",
+        "pricePrimary",
+        "priceCardTrader",
+    ):
         v = md.get(k)
         if isinstance(v, (int, float)) and v > 0:
             return float(v)

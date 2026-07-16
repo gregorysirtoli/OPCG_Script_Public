@@ -66,6 +66,7 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
             "createdAt": 1,
             "pricePrimary": 1,
             "pricePriceCharting": 1,
+            "priceCardTrader": 1,
             "cmPriceAvg": 1,
             "cmPriceLow": 1,
             "cmAvg7d": 1,
