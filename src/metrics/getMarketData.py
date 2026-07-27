@@ -158,6 +158,37 @@ def _round2(n: Optional[float]) -> Optional[float]:
     return float(f"{n:.2f}")
 
 
+def _compute_price_confidence_score(
+    price_primary: Optional[float],
+    price_trend: Optional[float],
+    price_secondary: Optional[float],
+    price_tertiary: Optional[float],
+    price_cardtrader: Optional[float],
+    price_pricecharting: Optional[float],
+    price_7d: Optional[float],
+    price_30d: Optional[float],
+) -> Optional[float]:
+    """Returns a weighted 0-1 score indicating how many independent price sources
+    corroborate the displayed price. Higher = more reliable.
+    """
+    score = 0.0
+    if price_primary is not None or price_trend is not None:
+        score += 0.30
+    if price_secondary is not None:
+        score += 0.15
+    if price_tertiary is not None:
+        score += 0.20
+    if price_cardtrader is not None:
+        score += 0.15
+    if price_pricecharting is not None:
+        score += 0.15
+    if price_7d is not None:
+        score += 0.025
+    if price_30d is not None:
+        score += 0.025
+    return _round2(min(1.0, score)) if score > 0 else None
+
+
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     redline_values = [
         _to_number((doc or {}).get("pricePrimary")),
@@ -799,6 +830,16 @@ def compute_market_data_for_item(
         "momentumWeighted": momentum_weighted_pct, # %
         "momentumScore": momentum_score, # 0..100
         "gradingAttractivenessScore": grading_attractiveness_score, # 0..100
+        "priceConfidenceScore": _compute_price_confidence_score(
+            price_primary=_as_number_or_none((latest or {}).get("pricePrimary")),
+            price_trend=_as_number_or_none(cm_trend),
+            price_secondary=_as_number_or_none(price_secondary),
+            price_tertiary=_as_number_or_none(price_tertiary),
+            price_cardtrader=_as_number_or_none(price_cardtrader),
+            price_pricecharting=_as_number_or_none((latest or {}).get("pricePriceCharting")),
+            price_7d=price_7d,
+            price_30d=price_30d,
+        ), # 0..1
     }
 
 
