@@ -633,7 +633,16 @@ def compute_market_data_for_item(
 
     # sellers & listings from doc (latest)
     sellers = latest.get("sellers") if latest else None
-    listings = latest.get("listings") if latest else None
+    cm_listings = _to_number((latest or {}).get("listings"))
+    ct_listings = _to_number((latest or {}).get("ctListings"))
+    if cm_listings is not None and ct_listings is not None:
+        listings: Any = cm_listings + ct_listings
+    elif cm_listings is not None:
+        listings = cm_listings
+    elif ct_listings is not None:
+        listings = ct_listings
+    else:
+        listings = None
 
     # priceSecondary USD
     price_secondary = None
