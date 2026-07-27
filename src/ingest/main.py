@@ -335,7 +335,7 @@ def main() -> int:
                     language = doc.get("language", "en")
                     if card_trader_id:
                         try:
-                            price_cardtrader, ct_listings = cardtrader.fetch_cardtrader_price(
+                            price_cardtrader, ct_listings, ct_sellers = cardtrader.fetch_cardtrader_price(
                                 {
                                     "itemId": item_id,
                                     "cardTraderId": card_trader_id,
@@ -347,6 +347,8 @@ def main() -> int:
                                 row["priceCardTrader"] = price_cardtrader
                             if ct_listings is not None:
                                 row["ctListings"] = ct_listings
+                            if ct_sellers is not None:
+                                row["ctSellers"] = ct_sellers
                         except Exception as e:
                             logger.warning(
                                 "CardTrader error itemId=%s cardTraderId=%s: %s",
