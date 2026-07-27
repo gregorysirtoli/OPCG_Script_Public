@@ -50,13 +50,21 @@ def _scale_0_100(value: Optional[float], cap: float) -> Optional[float]:
 def _compute_liquidity_score(
     sellers: Any,
     listings: Any,
+    listings_sources_count: int,
     spread_pct: Optional[float],
 ) -> Optional[float]:
     sellers_n = _to_number(sellers)
     listings_n = _to_number(listings)
 
+    # When listings come from multiple marketplaces, normalize to avoid
+    # inflating liquidity just because more sources are summed together.
+    sources = max(1, int(listings_sources_count or 1))
+    normalized_listings = (
+        (listings_n / sqrt(float(sources))) if listings_n is not None else None
+    )
+
     sellers_score = _scale_0_100(sellers_n, 20.0)
-    listings_score = _scale_0_100(listings_n, 40.0)
+    listings_score = _scale_0_100(normalized_listings, 40.0)
     spread_score = None
     if spread_pct is not None:
         # lower spread is generally healthier / easier to exit
@@ -643,6 +651,7 @@ def compute_market_data_for_item(
         listings = ct_listings
     else:
         listings = None
+    listings_sources_count = int(cm_listings is not None) + int(ct_listings is not None)
 
     # priceSecondary USD
     price_secondary = None
@@ -747,6 +756,7 @@ def compute_market_data_for_item(
     liquidity_score = _compute_liquidity_score(
         sellers=sellers,
         listings=listings,
+        listings_sources_count=listings_sources_count,
         spread_pct=low_vs_trend_discount_pct,
     )
     momentum_weighted_pct = _compute_weighted_momentum(pct7, pct30, pct90)
