@@ -640,7 +640,16 @@ def compute_market_data_for_item(
     pct365 = _calc_pct_change(s.price_now_usd, baselines.b365)
 
     # sellers & listings from doc (latest)
-    sellers = latest.get("sellers") if latest else None
+    cm_sellers = _to_number((latest or {}).get("sellers"))
+    ct_sellers = _to_number((latest or {}).get("ctSellers"))
+    if cm_sellers is not None and ct_sellers is not None:
+        sellers: Any = cm_sellers + ct_sellers
+    elif cm_sellers is not None:
+        sellers = cm_sellers
+    elif ct_sellers is not None:
+        sellers = ct_sellers
+    else:
+        sellers = None
     cm_listings = _to_number((latest or {}).get("listings"))
     ct_listings = _to_number((latest or {}).get("ctListings"))
     if cm_listings is not None and ct_listings is not None:
@@ -1503,6 +1512,8 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
                 "priceYuyuTei": 1,
                 "priceCardTrader": 1,
                 "listings": 1,
+                "ctListings": 1,
+                "ctSellers": 1,
             },
         ):
             item_id = doc.get("itemId")
@@ -1619,7 +1630,9 @@ def update_cards_market_data(
             "priceUngraded": 1,
             "pricePriceCharting": 1,
             "listings": 1,
+            "ctListings": 1,
             "sellers": 1,
+            "ctSellers": 1,
             "psa10": 1,
             "bsg10": 1,
             "sgc10": 1,
@@ -1686,6 +1699,7 @@ def update_cards_market_data(
     # CardsMetrics fallback: if a card has no psa10 in Prices, use latestPrice from the most recent CardsMetrics doc.
     coll_cards_metrics = _sales_db["CardsMetrics"]
     cards_metrics_latest: Dict[str, Dict[str, Optional[float]]] = {}
+    cards_metrics_latest_ts: Dict[str, datetime] = {}
     for doc in coll_cards_metrics.find(
         {"cardId": {"$in": ids}},
         {
@@ -1694,15 +1708,27 @@ def update_cards_market_data(
             "latestPrice": 1,
             "growthRate": 1,
         },
-    ).sort("createdAt", -1):
+    ):
         card_id = doc.get("cardId")
         latest_price = doc.get("latestPrice")
-        if isinstance(card_id, str) and card_id not in cards_metrics_latest:
-            v = _to_number(latest_price)
-            cards_metrics_latest[card_id] = {
-                "latestPrice": v,
-                "psa10GrowthRate": _extract_cards_metrics_growth_value(doc),
-            }
+        created_at = doc.get("createdAt")
+        if not isinstance(card_id, str):
+            continue
+
+        prev_ts = cards_metrics_latest_ts.get(card_id)
+        if prev_ts is not None and isinstance(created_at, datetime) and created_at <= prev_ts:
+            continue
+
+        if prev_ts is None and card_id in cards_metrics_latest and not isinstance(created_at, datetime):
+            continue
+
+        v = _to_number(latest_price)
+        cards_metrics_latest[card_id] = {
+            "latestPrice": v,
+            "psa10GrowthRate": _extract_cards_metrics_growth_value(doc),
+        }
+        if isinstance(created_at, datetime):
+            cards_metrics_latest_ts[card_id] = created_at
 
     # Merge CardsMetrics latestPrice as psa10 fallback into graded_first.
     for cid in ids:
