@@ -56,6 +56,14 @@ def _compute_liquidity_score(
     sellers_n = _to_number(sellers)
     listings_n = _to_number(listings)
 
+    # No market depth inputs available: treat as no liquidity.
+    if sellers_n is None and listings_n is None:
+        return 0.0
+
+    # Explicitly no active supply: liquidity should be zero.
+    if sellers_n is not None and listings_n is not None and sellers_n <= 0 and listings_n <= 0:
+        return 0.0
+
     # When listings come from multiple marketplaces, normalize to avoid
     # inflating liquidity just because more sources are summed together.
     sources = max(1, int(listings_sources_count or 1))
@@ -66,7 +74,8 @@ def _compute_liquidity_score(
     sellers_score = _scale_0_100(sellers_n, 20.0)
     listings_score = _scale_0_100(normalized_listings, 40.0)
     spread_score = None
-    if spread_pct is not None:
+    has_depth_signal = (sellers_score is not None) or (listings_score is not None)
+    if spread_pct is not None and has_depth_signal:
         # lower spread is generally healthier / easier to exit
         spread_score = _score_0_100(100.0 - min(max(spread_pct, 0.0), 40.0) * 2.5)
 
