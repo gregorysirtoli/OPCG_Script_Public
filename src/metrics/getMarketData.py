@@ -210,6 +210,7 @@ def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     redline_values = [
         _to_number((doc or {}).get("pricePrimary")),
         _to_number((doc or {}).get("cmPriceTrend")),
+        _to_number((doc or {}).get("cmPriceLow")),
         _to_number((doc or {}).get("cmAvg30d")),
         _to_number((doc or {}).get("priceYuyuTei")),
         _to_number((doc or {}).get("pricePriceCharting")),
@@ -377,7 +378,7 @@ def _best_usd(doc: Dict[str, Any]) -> Optional[float]:
      
     # All prices in USD. If no pricePrimary, use priority fallback.
     for k in ("cmPriceTrend", "priceYuyuTei", "priceUngraded", "pricePriceCharting",
-              "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "cmPriceLow", "priceCardTrader"):
+              "cmPriceLow", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "priceCardTrader"):
         v = _to_number(doc.get(k))
         if v is not None:
             return v
@@ -673,7 +674,7 @@ def compute_market_data_for_item(
 
     # priceSecondary USD
     price_secondary = None
-    for key in ("cmPriceTrend", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "cmPriceLow"):
+    for key in ("cmPriceTrend", "cmPriceLow", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d"):
         v = _to_number((latest or {}).get(key))
         if v is not None:
             price_secondary = v
