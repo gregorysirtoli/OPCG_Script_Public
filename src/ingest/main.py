@@ -45,7 +45,7 @@ def load_provider_module(module_name: Optional[str]):
     Carica dinamicamente i provider dal modulo indicato (repo privata o mock pubblico).
     Il modulo deve esportare una lista 'PROVIDERS' di istanze con:
       - name: str
-      - fetch_primary_price(item_id) -> (price, sellers, listings)
+            - fetch_primary_price(item_id) -> (price, sellers, listings, lowest_price, median_price)
       - fetch_secondary_breakdown(card_info) -> (details_map, updates_map)
     """
     if not module_name:
@@ -227,13 +227,17 @@ def main() -> int:
                 # ===== Primary =====
                 if primary and primary_id:
                     try:
-                        price, sellers, listings = primary.fetch_primary_price(primary_id)
+                        price, sellers, listings, tcg_lowest_price, tcg_median_price = primary.fetch_primary_price(primary_id)
                         if price is not None:
                             row["pricePrimary"] = float(price)
                         if sellers is not None:
                             row["sellers"] = int(sellers)
                         if listings is not None:
                             row["listings"] = int(listings)
+                        if tcg_lowest_price is not None:
+                            row["tcgLowestPrice"] = float(tcg_lowest_price)
+                        if tcg_median_price is not None:
+                            row["tcgMedianPrice"] = float(tcg_median_price)
                     except Exception as e:
                         logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, e)
 

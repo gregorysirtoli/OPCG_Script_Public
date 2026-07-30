@@ -1,13 +1,13 @@
 # src/providers/mock.py
 from __future__ import annotations
 from typing import Optional, Any
-from .base import PriceProvider, PriceTriple, PriceDetails, UpdatesMap
+from .base import PriceProvider, PricePrimaryTuple, PriceDetails, UpdatesMap
 
 class MockProvider:
     name = "mock"
 
-    def fetch_primary_price(self, item_id: Optional[int]) -> PriceTriple:
-        return 12.34, 5, 18
+    def fetch_primary_price(self, item_id: Optional[int]) -> PricePrimaryTuple:
+        return 12.34, 5, 18, 11.11, 13.37
 
     def fetch_secondary_breakdown(self, card_info: dict[str, Any]) -> tuple[PriceDetails, UpdatesMap]:
         details: PriceDetails = {

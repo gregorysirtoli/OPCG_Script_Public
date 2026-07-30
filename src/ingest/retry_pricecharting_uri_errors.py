@@ -265,13 +265,17 @@ def main() -> int:
 
                 if primary and primary_id:
                     try:
-                        price, sellers, listings = primary.fetch_primary_price(primary_id)
+                        price, sellers, listings, tcg_lowest_price, tcg_median_price = primary.fetch_primary_price(primary_id)
                         if price is not None:
                             row["pricePrimary"] = float(price)
                         if sellers is not None:
                             row["sellers"] = int(sellers)
                         if listings is not None:
                             row["listings"] = int(listings)
+                        if tcg_lowest_price is not None:
+                            row["tcgLowestPrice"] = float(tcg_lowest_price)
+                        if tcg_median_price is not None:
+                            row["tcgMedianPrice"] = float(tcg_median_price)
                     except Exception as exc:
                         logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, exc)
 
