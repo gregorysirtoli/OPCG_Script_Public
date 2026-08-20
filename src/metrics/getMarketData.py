@@ -13,6 +13,8 @@ SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
 SET_HISTORY_LOOKBACK_DAYS = 45
 SET_TOP_BASE_PRICE = 20.0
 SET_MARKET_HISTORY_COLLECTION = "SetsMarketData"
+CARD_STAMPS_COLLECTION = "CardsStamps"
+CARD_STAMP_CHANGES_COLLECTION = "CardsStampChanges"
 SET_MARKET_HISTORY_FIELDS = (
     "cardsCount",
     "otherTypesCount",
@@ -32,6 +34,115 @@ SET_MARKET_HISTORY_FIELDS = (
     "roi",
     "volatility",
 )
+
+PRICE_BAND_RULES = (
+    {
+        "key": "UNDER_10",
+        "label": "Under $10 band",
+        "min": 0.0,
+        "max": 10.0,
+        "proofWinRate8w": 75,
+        "proofMedianGain8w": 17,
+    },
+    {
+        "key": "USD_10_50",
+        "label": "$10-$50 band",
+        "min": 10.0,
+        "max": 50.0,
+        "proofWinRate8w": 80,
+        "proofMedianGain8w": 25,
+    },
+    {
+        "key": "USD_50_200",
+        "label": "$50-$200 band",
+        "min": 50.0,
+        "max": 200.0,
+        "proofWinRate8w": 82,
+        "proofMedianGain8w": 32,
+    },
+    {
+        "key": "USD_200_PLUS",
+        "label": "$200+ band",
+        "min": 200.0,
+        "max": None,
+        "proofWinRate8w": 84,
+        "proofMedianGain8w": 21,
+    },
+)
+
+BUY_TIER_RULES = {
+    "HIGH_CONVICTION": {
+        "label": "High Conviction",
+        "proofWinRate8w": 89,
+        "proofMedianGain8w": 22.2,
+        "side": "buy",
+    },
+    "EVENT_RUNNER": {
+        "label": "Event Runner",
+        "proofWinRate8w": 74,
+        "proofMedianGain8w": 15.3,
+        "side": "buy",
+    },
+    "RIDING_THE_HIGH": {
+        "label": "Riding the High",
+        "proofWinRate8w": 78,
+        "proofMedianGain8w": 13.8,
+        "side": "buy",
+    },
+    "PREMIUM_CLIMB": {
+        "label": "Premium Climb",
+        "proofWinRate8w": 81,
+        "proofMedianGain8w": 12.1,
+        "side": "buy",
+    },
+    "SUPPLY_SQUEEZE": {
+        "label": "Supply Squeeze",
+        "proofWinRate8w": None,
+        "proofMedianGain8w": None,
+        "side": "buy",
+    },
+    "MOMENTUM": {
+        "label": "Momentum",
+        "proofWinRate8w": 64,
+        "proofMedianGain8w": 11.7,
+        "side": "buy",
+    },
+    "ROLLOVER": {
+        "label": "Rollover",
+        "proofWinRate8w": None,
+        "proofMedianGain8w": None,
+        "side": "sell",
+    },
+    "HARD_DROP": {
+        "label": "Hard Drop",
+        "proofWinRate8w": None,
+        "proofMedianGain8w": None,
+        "side": "sell",
+    },
+}
+
+STAMP_RULES = {
+    "ACCUMULATE": {
+        "label": "Accumulate",
+        "kind": "buy",
+    },
+    "HOLD": {
+        "label": "Hold",
+        "kind": "default",
+    },
+    "SELL_WATCH": {
+        "label": "Sell Watch",
+        "kind": "warning",
+    },
+    "REBOUND_WATCH": {
+        "label": "Rebound Watch",
+        "kind": "speculative",
+    },
+    "BUY_SETUP": {
+        "label": "Buy Setup",
+        "kind": "supply",
+    },
+}
 
 def _clamp(n: Optional[float], low: float, high: float) -> Optional[float]:
     if n is None:
@@ -597,6 +708,279 @@ def _extract_cards_metrics_growth_value(doc: Dict[str, Any]) -> Optional[float]:
     value = _to_number(doc.get("growthRate"))
     return _round2(value) if value is not None else None
 
+
+def _classify_price_band(price30d: Optional[float], price_now: Optional[float]) -> Dict[str, Any]:
+    ref_price = price30d if price30d is not None and price30d > 0 else price_now
+    if ref_price is None or ref_price <= 0:
+        return {
+            "key": "UNKNOWN",
+            "label": "Unknown band",
+            "reference": {
+                "basis": "price30dMedianThenSpot",
+                "price30d": _as_number_or_none(price30d),
+                "priceNow": _as_number_or_none(price_now),
+                "selected": None,
+            },
+            "proof": {
+                "qualifiedHigher8wPct": None,
+                "medianGain8wPct": None,
+            },
+        }
+
+    for band in PRICE_BAND_RULES:
+        band_min = float(band["min"])
+        band_max = band["max"]
+        if ref_price < band_min:
+            continue
+        if band_max is not None and ref_price >= float(band_max):
+            continue
+        return {
+            "key": band["key"],
+            "label": band["label"],
+            "reference": {
+                "basis": "price30dMedianThenSpot",
+                "price30d": _as_number_or_none(price30d),
+                "priceNow": _as_number_or_none(price_now),
+                "selected": _as_number_or_none(ref_price),
+            },
+            "proof": {
+                "qualifiedHigher8wPct": band["proofWinRate8w"],
+                "medianGain8wPct": band["proofMedianGain8w"],
+            },
+        }
+
+    return {
+        "key": "UNKNOWN",
+        "label": "Unknown band",
+        "reference": {
+            "basis": "price30dMedianThenSpot",
+            "price30d": _as_number_or_none(price30d),
+            "priceNow": _as_number_or_none(price_now),
+            "selected": _as_number_or_none(ref_price),
+        },
+        "proof": {
+            "qualifiedHigher8wPct": None,
+            "medianGain8wPct": None,
+        },
+    }
+
+
+def _snapshot_total_listings(doc: Optional[Dict[str, Any]]) -> Optional[float]:
+    if not doc:
+        return None
+    cm_listings = _to_number(doc.get("listings"))
+    ct_listings = _to_number(doc.get("ctListings"))
+    if cm_listings is not None and ct_listings is not None:
+        return cm_listings + ct_listings
+    if cm_listings is not None:
+        return cm_listings
+    if ct_listings is not None:
+        return ct_listings
+    return None
+
+
+def _compute_listing_pct_changes(
+    prices: List[Dict[str, Any]],
+    now_utc: datetime,
+) -> Tuple[Optional[float], Optional[float]]:
+    latest = prices[0] if prices else None
+    listings_now = _snapshot_total_listings(latest)
+    if listings_now is None or listings_now <= 0:
+        return (None, None)
+
+    doc7 = _get_closest_around(prices, now_utc - timedelta(days=7), max_days=3.5)
+    doc30 = _get_closest_around(prices, now_utc - timedelta(days=30), max_days=7)
+    listings_7d = _snapshot_total_listings(doc7)
+    listings_30d = _snapshot_total_listings(doc30)
+
+    pct7 = _calc_pct_change(listings_now, listings_7d)
+    pct30 = _calc_pct_change(listings_now, listings_30d)
+    return (pct7, pct30)
+
+
+def _compute_price_position(price_now: Optional[float], prices: List[Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    series = []
+    for snap in prices:
+        px = _effective_price_from_snapshot(snap)
+        if px is not None and px > 0:
+            series.append(px)
+
+    if not series or price_now is None or price_now <= 0:
+        return {
+            "ath": None,
+            "drawdownFromAthPct": None,
+            "distanceToAthPct": None,
+            "nearAth": None,
+        }
+
+    ath = max(series)
+    drawdown = _round2(((price_now - ath) / ath) * 100.0) if ath > 0 else None
+    distance = _round2(((ath - price_now) / ath) * 100.0) if ath > 0 else None
+    near_ath = distance is not None and distance <= 8.0
+    return {
+        "ath": _as_number_or_none(ath),
+        "drawdownFromAthPct": drawdown,
+        "distanceToAthPct": distance,
+        "nearAth": near_ath,
+    }
+
+
+def _classify_buy_tier(
+    set_id: Optional[str],
+    price_band_key: str,
+    pct1: Optional[float],
+    pct7: Optional[float],
+    pct30: Optional[float],
+    pct90: Optional[float],
+    spread_pct: Optional[float],
+    listings_pct7: Optional[float],
+    listings_pct30: Optional[float],
+    near_ath: Optional[bool],
+) -> Optional[Dict[str, Any]]:
+    p1 = pct1 if pct1 is not None else 0.0
+    p7 = pct7 if pct7 is not None else 0.0
+    p30 = pct30 if pct30 is not None else 0.0
+    p90 = pct90 if pct90 is not None else 0.0
+    spread = spread_pct if spread_pct is not None else 999.0
+    l7 = listings_pct7 if listings_pct7 is not None else 0.0
+    l30 = listings_pct30 if listings_pct30 is not None else 0.0
+    set_id_norm = (set_id or "").strip().upper()
+
+    tier_key: Optional[str] = None
+
+    # Sell-warning tiers first so they cannot be masked by buy-side tiers.
+    if p30 >= 10.0 and p7 <= -3.0:
+        tier_key = "ROLLOVER"
+    elif p7 <= -12.0:
+        tier_key = "HARD_DROP"
+
+    if (
+        not tier_key
+        and
+        price_band_key == "USD_200_PLUS"
+        and p7 >= 3.0
+        and p7 <= 18.0
+        and p30 >= 8.0
+        and p30 <= 40.0
+        and p1 > -4.0
+        and spread <= 22.0
+    ):
+        tier_key = "HIGH_CONVICTION"
+    elif (
+        not tier_key
+        and
+        price_band_key == "USD_200_PLUS"
+        and bool(near_ath)
+        and p7 >= 1.5
+        and p30 >= 6.0
+    ):
+        tier_key = "RIDING_THE_HIGH"
+    elif (
+        not tier_key
+        and
+        price_band_key == "USD_200_PLUS"
+        and p7 >= 0.5
+        and p7 <= 6.5
+        and p30 >= 5.0
+        and p30 <= 20.0
+        and abs(p1) <= 5.0
+        and spread <= 18.0
+    ):
+        tier_key = "PREMIUM_CLIMB"
+    elif (
+        not tier_key
+        and set_id_norm in ("OPP", "OPPJP")
+        and
+        p7 >= 4.0
+        and p30 >= 10.0
+        and p90 >= 18.0
+        and l30 <= -10.0
+        and p7 <= 22.0
+    ):
+        tier_key = "EVENT_RUNNER"
+    elif not tier_key and l30 <= -15.0 and p30 >= 5.0 and p7 >= 1.0:
+        tier_key = "SUPPLY_SQUEEZE"
+    elif (
+        not tier_key
+        and
+        price_band_key in ("UNDER_10", "USD_10_50", "USD_50_200")
+        and p7 >= 4.0
+        and p30 >= 9.0
+        and p7 <= 20.0
+        and p30 <= 45.0
+    ):
+        tier_key = "MOMENTUM"
+
+    if not tier_key:
+        return None
+
+    proof = BUY_TIER_RULES[tier_key]
+    return {
+        "key": tier_key,
+        "label": proof["label"],
+        "side": proof.get("side") or "buy",
+        "proof": {
+            "qualifiedHigher8wPct": proof["proofWinRate8w"],
+            "medianGain8wPct": proof["proofMedianGain8w"],
+        },
+    }
+
+
+def _classify_stamp(
+    price_band_key: str,
+    pct1: Optional[float],
+    pct7: Optional[float],
+    pct30: Optional[float],
+    listings_pct30: Optional[float],
+    buy_tier: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    band_thresholds = {
+        "UNDER_10": {"sell7": -12.0, "strong30": 14.0, "rebound30": -22.0},
+        "USD_10_50": {"sell7": -10.0, "strong30": 12.0, "rebound30": -18.0},
+        "USD_50_200": {"sell7": -8.0, "strong30": 10.0, "rebound30": -15.0},
+        "USD_200_PLUS": {"sell7": -6.0, "strong30": 8.0, "rebound30": -12.0},
+        "UNKNOWN": {"sell7": -9.0, "strong30": 10.0, "rebound30": -16.0},
+    }
+    t = band_thresholds.get(price_band_key, band_thresholds["UNKNOWN"])
+
+    p1 = pct1 if pct1 is not None else 0.0
+    p7 = pct7 if pct7 is not None else 0.0
+    p30 = pct30 if pct30 is not None else 0.0
+    l30 = listings_pct30 if listings_pct30 is not None else 0.0
+
+    sell_watch = (p7 <= t["sell7"]) or (p30 >= t["strong30"] and p7 <= -3.0)
+    if sell_watch:
+        rule = STAMP_RULES["SELL_WATCH"]
+        return {"key": "SELL_WATCH", "label": rule["label"], "kind": rule["kind"]}
+
+    # Stamp must be independent from tier: classify Accumulate with
+    # stamp-specific momentum thresholds by price band.
+    accumulate_thresholds = {
+        "UNDER_10": {"min7": 6.0, "min30": 12.0},
+        "USD_10_50": {"min7": 5.0, "min30": 10.0},
+        "USD_50_200": {"min7": 4.0, "min30": 8.0},
+        "USD_200_PLUS": {"min7": 2.0, "min30": 6.0},
+        "UNKNOWN": {"min7": 4.0, "min30": 9.0},
+    }
+    acc = accumulate_thresholds.get(price_band_key, accumulate_thresholds["UNKNOWN"])
+    accumulate = p7 >= acc["min7"] and p30 >= acc["min30"] and p7 <= 25.0 and p30 <= 55.0
+    if accumulate:
+        rule = STAMP_RULES["ACCUMULATE"]
+        return {"key": "ACCUMULATE", "label": rule["label"], "kind": rule["kind"]}
+
+    buy_setup = l30 <= -20.0 and p30 >= 4.0 and p7 >= 0.0
+    if buy_setup:
+        rule = STAMP_RULES["BUY_SETUP"]
+        return {"key": "BUY_SETUP", "label": rule["label"], "kind": rule["kind"]}
+
+    rebound_watch = p30 <= t["rebound30"] and p7 >= 3.0 and p1 >= 0.0
+    if rebound_watch:
+        rule = STAMP_RULES["REBOUND_WATCH"]
+        return {"key": "REBOUND_WATCH", "label": rule["label"], "kind": rule["kind"]}
+
+    rule = STAMP_RULES["HOLD"]
+    return {"key": "HOLD", "label": rule["label"], "kind": rule["kind"]}
+
 def compute_market_data_for_item(
     prices: List[Dict[str, Any]],
     graded_first: Dict[str, Any],
@@ -786,6 +1170,30 @@ def compute_market_data_for_item(
         liquidity_score=liquidity_score,
     )
 
+    listings_pct7, listings_pct30 = _compute_listing_pct_changes(prices, now)
+    price_band = _classify_price_band(price_30d, s.price_now_usd)
+    price_position = _compute_price_position(s.price_now_usd, prices)
+    buy_tier = _classify_buy_tier(
+        set_id=graded_first.get("setId"),
+        price_band_key=price_band.get("key", "UNKNOWN"),
+        pct1=pct1,
+        pct7=pct7,
+        pct30=pct30,
+        pct90=pct90,
+        spread_pct=low_vs_trend_discount_pct,
+        listings_pct7=listings_pct7,
+        listings_pct30=listings_pct30,
+        near_ath=price_position.get("nearAth"),
+    )
+    stamp = _classify_stamp(
+        price_band_key=price_band.get("key", "UNKNOWN"),
+        pct1=pct1,
+        pct7=pct7,
+        pct30=pct30,
+        listings_pct30=listings_pct30,
+        buy_tier=buy_tier,
+    )
+
     return {
         "updatedAt": datetime.now(timezone.utc),
         # marketData
@@ -878,6 +1286,17 @@ def compute_market_data_for_item(
             price_7d=price_7d,
             price_30d=price_30d,
         ), # 0..1
+
+        # ledger-style derived calls
+        "priceBand": price_band,
+        "buyTier": buy_tier,
+        "stamp": stamp,
+        "listingChange7d": listings_pct7,
+        "listingChange30d": listings_pct30,
+        "athPrice": price_position.get("ath"),
+        "drawdownFromAthPct": price_position.get("drawdownFromAthPct"),
+        "distanceToAthPct": price_position.get("distanceToAthPct"),
+        "nearAth": price_position.get("nearAth"),
     }
 
 
@@ -1603,14 +2022,21 @@ def update_cards_market_data(
     _sales_db = sales_db if sales_db is not None else db
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
+    coll_card_stamps = db[CARD_STAMPS_COLLECTION]
+    coll_card_stamp_changes = db[CARD_STAMP_CHANGES_COLLECTION]
     coll_cards_grading_population = _sales_db["CardsGradingPopulation"]
 
     q_cards: Dict[str, Any] = {}
-    #q_cards["setId"] = "OP13"
+    q_cards["setId"] = "OP13"
     if limit_ids:
         q_cards["id"] = {"$in": limit_ids}
 
-    base_cards = list(coll_cards.find(q_cards, {"id": 1, "setId": 1}))
+    base_cards = list(coll_cards.find(q_cards, {"id": 1, "setId": 1, "type": 1, "marketData": 1}))
+    base_cards_by_id: Dict[str, Dict[str, Any]] = {
+        card.get("id"): card
+        for card in base_cards
+        if isinstance(card.get("id"), str)
+    }
     ids = [c["id"] for c in base_cards if "id" in c]
     if not ids:
         return (0, 0, 0, 0)
@@ -1704,7 +2130,11 @@ def update_cards_market_data(
                 "bsg10black": best_doc.get("bsg10black"),
                 "tag10": best_doc.get("tag10"),
                 "ace10": best_doc.get("ace10"),
+                "setId": (base_cards_by_id.get(cid) or {}).get("setId"),
             }
+
+    for cid in ids:
+        graded_first.setdefault(cid, {})["setId"] = (base_cards_by_id.get(cid) or {}).get("setId")
 
     # CardsMetrics fallback: if a card has no psa10 in Prices, use latestPrice from the most recent CardsMetrics doc.
     coll_cards_metrics = _sales_db["CardsMetrics"]
@@ -1785,11 +2215,31 @@ def update_cards_market_data(
             break
         population_latest_prev_count[cid] = (latest_count, previous_count)
 
+    existing_stamps_by_item: Dict[str, Dict[str, Any]] = {}
+    for stamp_doc in coll_card_stamps.find(
+        {"itemId": {"$in": ids}},
+        {
+            "itemId": 1,
+            "stamp": 1,
+            "buyTier": 1,
+            "priceBand": 1,
+        },
+    ):
+        item_id = stamp_doc.get("itemId")
+        if isinstance(item_id, str):
+            existing_stamps_by_item[item_id] = stamp_doc
+
     ops: List[UpdateOne] = []
+    stamp_snapshot_ops: List[UpdateOne] = []
+    stamp_change_ops: List[InsertOne] = []
     touched = 0
     updated = 0
     for cid in ids:
         prices = per_item.get(cid, [])
+        now_utc = datetime.now(timezone.utc)
+        base_card = base_cards_by_id.get(cid, {})
+        previous_stamp_doc = existing_stamps_by_item.get(cid, {})
+
         psa10_count, psa10_count_previous = population_latest_prev_count.get(cid, (None, None))
         psa10_growth_rate = (cards_metrics_latest.get(cid) or {}).get("psa10GrowthRate")
         md = compute_market_data_for_item(
@@ -1800,11 +2250,83 @@ def update_cards_market_data(
             psa10_growth_rate,
             population_history_by_card.get(cid, []),
         )
+
+        current_band = md.get("priceBand") if isinstance(md.get("priceBand"), dict) else None
+        current_stamp = md.get("stamp") if isinstance(md.get("stamp"), dict) else None
+        current_tier = md.get("buyTier") if isinstance(md.get("buyTier"), dict) else None
+
+        prev_stamp_key = ((previous_stamp_doc.get("stamp") or {}).get("key") if isinstance(previous_stamp_doc, dict) else None) or ""
+        prev_stamp_call = ((previous_stamp_doc.get("stamp") or {}).get("callDate") if isinstance(previous_stamp_doc, dict) else None)
+        curr_stamp_key = (current_stamp or {}).get("key") or "HOLD"
+
+        prev_tier_key = ((previous_stamp_doc.get("buyTier") or {}).get("key") if isinstance(previous_stamp_doc, dict) else None) or ""
+        prev_tier_call = ((previous_stamp_doc.get("buyTier") or {}).get("callDate") if isinstance(previous_stamp_doc, dict) else None)
+        curr_tier_key = (current_tier or {}).get("key") or ""
+
+        stamp_call_date = prev_stamp_call if prev_stamp_key == curr_stamp_key and prev_stamp_call else now_utc
+        buy_tier_call_date = prev_tier_call if prev_tier_key == curr_tier_key and prev_tier_call else (now_utc if curr_tier_key else None)
+
+        if current_stamp is None:
+            current_stamp = {
+                "key": "HOLD",
+                "label": STAMP_RULES["HOLD"]["label"],
+                "kind": STAMP_RULES["HOLD"]["kind"],
+            }
+        current_stamp["callDate"] = stamp_call_date
+        md["stamp"] = current_stamp
+
+        if current_tier is not None and curr_tier_key:
+            current_tier["callDate"] = buy_tier_call_date
+            md["buyTier"] = current_tier
+
+        if curr_stamp_key != prev_stamp_key and prev_stamp_key:
+            stamp_change_ops.append(
+                InsertOne(
+                    {
+                        "itemId": cid,
+                        "setId": base_card.get("setId"),
+                        "itemType": base_card.get("type"),
+                        "fromStamp": prev_stamp_key,
+                        "toStamp": curr_stamp_key,
+                        "changedAt": now_utc,
+                        "priceBandAtCall": current_band,
+                        "buyTierAtCall": md.get("buyTier"),
+                    }
+                )
+            )
+
+        stamp_snapshot_doc = {
+            "itemId": cid,
+            "setId": base_card.get("setId"),
+            "itemType": base_card.get("type"),
+            "priceBand": current_band,
+            "stamp": md.get("stamp"),
+            "buyTier": md.get("buyTier"),
+            "marketDataUpdatedAt": md.get("updatedAt"),
+            "updatedAt": now_utc,
+        }
+        stamp_snapshot_ops.append(
+            UpdateOne(
+                {"itemId": cid},
+                {
+                    "$set": stamp_snapshot_doc,
+                    "$setOnInsert": {"createdAt": now_utc},
+                },
+                upsert=True,
+            )
+        )
+
         touched += 1
         if any(v is not None for v in md.values()):
             ops.append(UpdateOne({"id": cid}, {"$set": {"marketData": md}}))
+
     if ops:
         res = coll_cards.bulk_write(ops, ordered=False)
         updated = (res.modified_count or 0) + (res.upserted_count or 0)
+    if stamp_snapshot_ops:
+        coll_card_stamps.bulk_write(stamp_snapshot_ops, ordered=False)
+    if stamp_change_ops:
+        coll_card_stamp_changes.bulk_write(stamp_change_ops, ordered=False)
+
     sets_touched, sets_updated = update_sets_market_data(db, affected_set_ids)
     return (touched, updated, sets_touched, sets_updated)
