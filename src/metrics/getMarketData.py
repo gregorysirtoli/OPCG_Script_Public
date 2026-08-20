@@ -346,6 +346,12 @@ def _median(nums: List[float]) -> float:
     return float((arr[mid - 1] + arr[mid]) / 2.0)
 
 
+def _mean(nums: List[float]) -> float:
+    if not nums:
+        return 0.0
+    return float(sum(nums) / len(nums))
+
+
 def _quantile(nums: List[float], q: float) -> float:
     if not nums:
         return 0.0
@@ -825,6 +831,56 @@ def _compute_price_position(price_now: Optional[float], prices: List[Dict[str, A
     }
 
 
+def _compute_avg_gain_window_pct(
+    prices: List[Dict[str, Any]],
+    window_days: int,
+) -> Optional[float]:
+    if window_days <= 0:
+        return None
+
+    samples: List[Tuple[datetime, float]] = []
+    for snap in prices:
+        created_at = _parse_created_at(snap)
+        px = _effective_price_from_snapshot(snap)
+        if created_at is None or px is None or px <= 0:
+            continue
+        samples.append((created_at, px))
+
+    if len(samples) < 2:
+        return None
+
+    samples.sort(key=lambda x: x[0])
+    pct_changes: List[float] = []
+    max_slippage_days = max(3.0, window_days * 0.25)
+
+    for idx, (start_dt, start_px) in enumerate(samples):
+        target_dt = start_dt + timedelta(days=window_days)
+        best_j = -1
+        best_diff = None
+        for j in range(idx + 1, len(samples)):
+            end_dt, end_px = samples[j]
+            if end_dt <= start_dt:
+                continue
+            diff_days = abs((end_dt - target_dt).total_seconds()) / 86400.0
+            if diff_days > max_slippage_days:
+                continue
+            if best_diff is None or diff_days < best_diff:
+                best_diff = diff_days
+                best_j = j
+
+        if best_j == -1:
+            continue
+
+        end_px = samples[best_j][1]
+        pct = _calc_pct_change(end_px, start_px)
+        if pct is not None:
+            pct_changes.append(float(pct))
+
+    if not pct_changes:
+        return None
+    return _round2(_mean(pct_changes))
+
+
 def _classify_buy_tier(
     set_id: Optional[str],
     price_band_key: str,
@@ -1185,6 +1241,12 @@ def compute_market_data_for_item(
         listings_pct30=listings_pct30,
         near_ath=price_position.get("nearAth"),
     )
+    avg_gain_4w_pct = _compute_avg_gain_window_pct(prices, window_days=28)
+    if buy_tier is not None:
+        buy_tier_proof = buy_tier.get("proof") if isinstance(buy_tier.get("proof"), dict) else {}
+        buy_tier_proof["avgGain4wPct"] = avg_gain_4w_pct
+        buy_tier["proof"] = buy_tier_proof
+
     stamp = _classify_stamp(
         price_band_key=price_band.get("key", "UNKNOWN"),
         pct1=pct1,
@@ -2027,7 +2089,7 @@ def update_cards_market_data(
     coll_cards_grading_population = _sales_db["CardsGradingPopulation"]
 
     q_cards: Dict[str, Any] = {}
-    #q_cards["setId"] = "OP13"
+    q_cards["setId"] = "OP13"
     if limit_ids:
         q_cards["id"] = {"$in": limit_ids}
 
