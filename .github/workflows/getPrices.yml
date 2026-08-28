@@ -2,8 +2,8 @@ name: Run Prices
 
 on:
   workflow_dispatch: # manual trigger
-  schedule: # daily exec at 08:00 Europe/Rome
-    - cron: "0 6 * * *" # UTC > CEST (UTC+2) -> 08:00 in Italy
+  schedule:
+    - cron: "0 3 * * *" # UTC > CEST (UTC+2) -> 05:00 in Europe/Rome
 
 jobs:
   run-batches:
