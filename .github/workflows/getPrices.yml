@@ -3,7 +3,7 @@ name: Run Prices
 on:
   workflow_dispatch: # manual trigger
   schedule:
-    - cron: "0 3 * * *" # UTC > CEST (UTC+2) -> 05:00 in Europe/Rome
+    - cron: "17 3 * * *" # UTC -> CEST (UTC+2) ~= 05:17 in Europe/Rome (CEST)
 
 jobs:
   run-batches:
