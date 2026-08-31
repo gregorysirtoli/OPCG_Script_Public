@@ -25,6 +25,8 @@ if load_dotenv:
 
 MONGODB_URI   = os.environ["MONGODB_URI"]
 MONGODB_DB    = os.environ["MONGODB_DB"]
+MONGODB_ACCOUNT_URI = os.environ.get("MONGODB_ACCOUNT_URI", MONGODB_URI)
+MONGODB_ACCOUNT_DB = os.environ.get("MONGODB_ACCOUNT_DB", MONGODB_DB)
 SMTP_HOST     = os.environ["SMTP_HOST"]
 SMTP_PORT     = int(os.environ["SMTP_PORT"])
 SMTP_USER     = os.environ["SMTP_USER"]
@@ -59,8 +61,8 @@ def send_html_email(smtp: smtplib.SMTP, to: str, subject: str, body: str):
 
 
 def run():
-    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
-    db  = client[MONGODB_DB]
+    client = MongoClient(MONGODB_ACCOUNT_URI, serverSelectionTimeoutMS=10000)
+    db  = client[MONGODB_ACCOUNT_DB]
     col = db["Mail"]
 
     now          = datetime.now(timezone.utc)

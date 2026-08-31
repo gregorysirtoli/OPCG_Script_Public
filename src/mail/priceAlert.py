@@ -22,6 +22,8 @@ load_dotenv()
 
 MONGO_URI = os.environ["MONGODB_URI"]
 MONGODB_DB = os.environ["MONGODB_DB"]
+MONGODB_ACCOUNT_URI = os.environ.get("MONGODB_ACCOUNT_URI", MONGO_URI)
+MONGODB_ACCOUNT_DB = os.environ.get("MONGODB_ACCOUNT_DB", MONGODB_DB)
 
 CREDIT_COST = 10
 MAX_RANDOM_DELAY_HOURS = 12
@@ -63,7 +65,7 @@ def normalize_dt(dt):
 
 
 def enqueue_mail(
-    db,
+    account_db,
     subject: str,
     body: str,
     to: str,
@@ -73,7 +75,7 @@ def enqueue_mail(
     scheduled_at: datetime | None = None,
 ) -> None:
     now = datetime.now(timezone.utc)
-    db.Mail.insert_one({
+    account_db.Mail.insert_one({
         "subject": subject,
         "body": body,
         "to": to,
@@ -299,11 +301,13 @@ def build_notification_text(item: dict) -> str:
 # =============================================================================
 
 async def main() -> None:
-    client = MongoClient(MONGO_URI)
-    db = client[MONGODB_DB]
-    ensure_notification_indexes(db)
+    market_client = MongoClient(MONGO_URI)
+    market_db = market_client[MONGODB_DB]
+    account_client = MongoClient(MONGODB_ACCOUNT_URI)
+    account_db = account_client[MONGODB_ACCOUNT_DB]
+    ensure_notification_indexes(account_db)
 
-    alerts = list(db.PricesAlert.aggregate([
+    alerts = list(market_db.PricesAlert.aggregate([
         {
             "$match": {
                 "$or": [
@@ -328,7 +332,7 @@ async def main() -> None:
         return
 
     unique_item_ids = list({price_item_id(alert) for alert in alerts if price_item_id(alert)})
-    latest_prices_by_item_id = load_latest_prices_by_item_id(db, unique_item_ids)
+    latest_prices_by_item_id = load_latest_prices_by_item_id(market_db, unique_item_ids)
     if not latest_prices_by_item_id:
         print("[INFO] No active alerts with available prices.")
         return
@@ -359,7 +363,7 @@ async def main() -> None:
         if not item:
             continue
 
-        credit_res = db.Users.update_one(
+        credit_res = account_db.Users.update_one(
             {"_id": user_id, "credit": {"$gte": CREDIT_COST}},
             {"$inc": {"credit": -CREDIT_COST, "creditSpent": CREDIT_COST}},
         )
@@ -371,8 +375,8 @@ async def main() -> None:
         scheduled_at = random_scheduled_at(now)
         subject = f"[RED LINE] 🔔 {item['cleanName']} #{item['localId']} has a new price!"
         body = build_single_body(to_email, item, now)
-        enqueue_mail(db, subject, body, to_email, user_id, item["alertId"], scheduled_at=scheduled_at)
-        enqueue_notification(db, user_id, build_notification_text(item))
+        enqueue_mail(account_db, subject, body, to_email, user_id, item["alertId"], scheduled_at=scheduled_at)
+        enqueue_notification(account_db, user_id, build_notification_text(item))
         queued_count += 1
         notified_alert_ids.append(item["alertId"])
         alerts_by_id[item["alertId"]] = item["alert"]
@@ -393,12 +397,12 @@ async def main() -> None:
         recurrent_ids = [alert_id for alert_id in item_ids if alert_id not in non_recurrent_ids]
 
         if recurrent_ids:
-            db.PricesAlert.update_many(
+            market_db.PricesAlert.update_many(
                 {"_id": {"$in": recurrent_ids}},
                 {"$set": {"lastNotifiedAt": now}},
             )
         if non_recurrent_ids:
-            db.PricesAlert.update_many(
+            market_db.PricesAlert.update_many(
                 {"_id": {"$in": non_recurrent_ids}},
                 {"$set": {"lastNotifiedAt": now, "notified": True}},
             )

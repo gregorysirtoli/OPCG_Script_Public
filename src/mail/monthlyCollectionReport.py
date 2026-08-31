@@ -18,6 +18,8 @@ load_dotenv()
 
 MONGO_URI = os.environ["MONGODB_URI"]
 MONGODB_DB = os.environ["MONGODB_DB"]
+MONGODB_ACCOUNT_URI = os.environ.get("MONGODB_ACCOUNT_URI", MONGO_URI)
+MONGODB_ACCOUNT_DB = os.environ.get("MONGODB_ACCOUNT_DB", MONGODB_DB)
 
 TOP_SETS = 5
 TOP_NEWEST = 5
@@ -179,8 +181,8 @@ def get_registration_date(user_doc: dict[str, Any]) -> datetime | None:
     return normalize_dt(user_doc.get("createdAt"))
 
 
-def enqueue_mail(db, subject: str, body: str, to: str, user_id: ObjectId) -> None:
-    db.Mail.insert_one(
+def enqueue_mail(account_db, subject: str, body: str, to: str, user_id: ObjectId) -> None:
+    account_db.Mail.insert_one(
         {
             "subject": subject,
             "body": body,
@@ -312,8 +314,8 @@ def pick_snapshot_value(db, user_id: ObjectId, cutoff: datetime) -> float | None
     return to_float(snap.get("totalValue"))
 
 
-def get_last_monthly_report_run_at(db, user_id: ObjectId) -> datetime | None:
-    last_mail = db.Mail.find_one(
+def get_last_monthly_report_run_at(account_db, user_id: ObjectId) -> datetime | None:
+    last_mail = account_db.Mail.find_one(
         {
             "userId": user_id,
             "reportType": "monthlyCollection",
@@ -406,7 +408,7 @@ def build_report_html(
     )
 
 
-def should_send_report(db, user_doc: dict[str, Any], user_id: ObjectId, now: datetime) -> bool:
+def should_send_report(account_db, user_doc: dict[str, Any], user_id: ObjectId, now: datetime) -> bool:
     if not is_subscribed(user_doc):
         return False
 
@@ -414,7 +416,7 @@ def should_send_report(db, user_doc: dict[str, Any], user_id: ObjectId, now: dat
     if not registered_at:
         return False
 
-    last_report_at = get_last_monthly_report_run_at(db, user_id)
+    last_report_at = get_last_monthly_report_run_at(account_db, user_id)
 
     first_due = add_months(registered_at, 1)
     if now < first_due:
@@ -428,14 +430,16 @@ def should_send_report(db, user_doc: dict[str, Any], user_id: ObjectId, now: dat
 
 
 def main() -> None:
-    client = MongoClient(MONGO_URI)
-    db = client[MONGODB_DB]
-    ensure_notification_indexes(db)
+    market_client = MongoClient(MONGO_URI)
+    market_db = market_client[MONGODB_DB]
+    account_client = MongoClient(MONGODB_ACCOUNT_URI)
+    account_db = account_client[MONGODB_ACCOUNT_DB]
+    ensure_notification_indexes(account_db)
 
     now = datetime.now(timezone.utc)
 
     users = list(
-        db.Users.find(
+        account_db.Users.find(
             {
                 "monthlyReport": "subscribed",
                 "$or": [{"email": {"$exists": True}}, {"userEmail": {"$exists": True}}],
@@ -455,7 +459,7 @@ def main() -> None:
         if not isinstance(user_id, ObjectId):
             continue
 
-        if not should_send_report(db, user_doc, user_id, now):
+        if not should_send_report(account_db, user_doc, user_id, now):
             print(f"[SKIP] User {user_ref}: not due/subscribed.")
             continue
 
@@ -464,7 +468,7 @@ def main() -> None:
             print(f"[SKIP] User {user_ref}: missing email.")
             continue
 
-        holdings = get_user_holdings(db, user_doc)
+        holdings = get_user_holdings(market_db, user_doc)
         if not holdings:
             print(f"[SKIP] User {user_ref}: no portfolio holdings.")
             continue
@@ -482,7 +486,7 @@ def main() -> None:
                 ]
             }
 
-        cards = list(db.Cards.find(card_match))
+        cards = list(market_db.Cards.find(card_match))
         by_id = {c.get("_id"): c for c in cards}
         by_legacy_id = {str(c.get("id")): c for c in cards if c.get("id") is not None}
 
@@ -530,8 +534,8 @@ def main() -> None:
 
         month_cutoff = add_months(now, -1)
         year_cutoff = add_months(now, -12)
-        last_month_value = pick_snapshot_value(db, user_id, month_cutoff)
-        last_year_value = pick_snapshot_value(db, user_id, year_cutoff)
+        last_month_value = pick_snapshot_value(market_db, user_id, month_cutoff)
+        last_year_value = pick_snapshot_value(market_db, user_id, year_cutoff)
 
         delta_month = (current_value - last_month_value) if last_month_value is not None else None
         delta_year = (current_value - last_year_value) if last_year_value is not None else None
@@ -581,10 +585,10 @@ def main() -> None:
         month_label = now.strftime("%B %Y")
         subject = f"[RED LINE] 🔔 Monthly Collection Report - {month_label}"
 
-        enqueue_mail(db=db, subject=subject, body=body, to=to_email, user_id=user_id)
-        enqueue_notification(db, user_id, build_notification_text(month_label))
+        enqueue_mail(account_db=account_db, subject=subject, body=body, to=to_email, user_id=user_id)
+        enqueue_notification(account_db, user_id, build_notification_text(month_label))
 
-        db[SNAPSHOT_COLLECTION].update_one(
+        market_db[SNAPSHOT_COLLECTION].update_one(
             {"userId": user_id, "asOf": now},
             {
                 "$set": {
