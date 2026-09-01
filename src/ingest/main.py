@@ -170,6 +170,7 @@ def main() -> int:
     fetched = 0
     last_id = None
     reached_limit = False
+    run_created_at: Optional[datetime] = None
 
     while True:
         if reached_limit:
@@ -217,7 +218,6 @@ def main() -> int:
                 # Documento base
                 dt_now = now_rome()
                 row: Dict[str, Any] = {
-                    "createdAt": now_rome(),
                     "itemId": item_id,
                     "executionFingerprint": run_fingerprint,
                     #"currency": "USD",
@@ -362,6 +362,10 @@ def main() -> int:
                             )
                 if len(row.keys()) <= 3:
                     continue
+
+                if run_created_at is None:
+                    run_created_at = now_rome()
+                row["createdAt"] = run_created_at
 
                 price_redline = _compute_price_redline(row)
                 if price_redline is not None:
