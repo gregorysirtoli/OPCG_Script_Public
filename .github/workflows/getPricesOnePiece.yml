@@ -1,4 +1,4 @@
-name: Run Prices
+name: Run Prices (One Piece)
 
 on:
   workflow_dispatch: # manual trigger
@@ -18,7 +18,7 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       CARDTRADER_AUTH_TOKEN: ${{ secrets.CARDTRADER_AUTH_TOKEN }}
-      MAIL_SUBJECT: "[Ingestor] Prices report"
+      MAIL_SUBJECT: "[Ingestor] Prices report - One Piece"
 
       # Private providers
       PROVIDERS_MODULE: private_providers.bundle

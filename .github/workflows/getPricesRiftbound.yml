@@ -1,9 +1,9 @@
-name: Run Prices (Gundam)
+name: Run Prices (Riftbound)
 
 on:
   workflow_dispatch: # manual trigger
   schedule:
-    - cron: "35 3 * * *" # UTC -> CEST (UTC+2) ~= 05:35 in Europe/Rome (CEST)
+    - cron: "12 3 * * *" # UTC -> CEST (UTC+2) ~= 05:12 in Europe/Rome (CEST)
 
 jobs:
   run-batches:
@@ -11,14 +11,14 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: 1
-      MONGODB_URI: ${{ secrets.MONGODB_URI_GUNDAM }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB_GUNDAM }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_RIFTBOUND }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_RIFTBOUND }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       CARDTRADER_AUTH_TOKEN: ${{ secrets.CARDTRADER_AUTH_TOKEN }}
-      MAIL_SUBJECT: "[Ingestor] Prices report - Gundam"
+      MAIL_SUBJECT: "[Ingestor] Prices report - Riftbound"
 
       # Private providers
       PROVIDERS_MODULE: private_providers.bundle
@@ -33,7 +33,7 @@ jobs:
       SECONDARY_SELECTORS: ${{ secrets.SECONDARY_SELECTORS }}
 
       # === CM (RED04) ===
-      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_GUNDAM }}
+      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_RIFTBOUND }}
       CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL }}
 
       # ===  FX ===
