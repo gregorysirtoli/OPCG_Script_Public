@@ -3,7 +3,7 @@ name: Run Prices (Retry)
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run Prices"]
+    workflows: ["Run Prices (One Piece)"]
     types:
       - completed
 
