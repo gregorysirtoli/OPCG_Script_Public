@@ -1,4 +1,4 @@
-name: Run Prices (Lorcana)
+name: Lorcana - Run Prices
 
 on:
   workflow_dispatch: # manual trigger
