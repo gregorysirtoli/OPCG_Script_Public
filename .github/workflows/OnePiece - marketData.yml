@@ -1,9 +1,9 @@
-name: Run MarketData
+name: Run MarketData (One Piece)
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run Prices (Retry)"]
+    workflows: ["Run Prices (One Piece) (Retry)"]
     types:
       - completed
 
@@ -22,6 +22,7 @@ jobs:
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      GAME: "ONE PIECE"
 
     steps:
       - uses: actions/checkout@v4

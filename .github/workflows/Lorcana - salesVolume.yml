@@ -1,25 +1,27 @@
-name: Run Tierlist
+name: Run Sales Volume (Lorcana)
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run MarketData"]
+    workflows: ["Run MarketData (Lorcana)"]
     types:
       - completed
 
 jobs:
-  run-tierlist:
+  update-market-data:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
 
     env:
       PYTHONUNBUFFERED: "1"
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      # Variabili richieste dallo script
+      MONGODB_URI: ${{ secrets.MONGODB_URI_LORCANA }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_LORCANA }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      GAME: "LORCANA"
 
     steps:
       - name: Checkout repo
@@ -37,6 +39,6 @@ jobs:
             python -m pip install -r requirements.txt
           fi
 
-      - name: Run Tierlist script
+      - name: Run Sales Volume script
         run: |
-          python -m src.tierlist.getTierlist
+          python -m src.metrics.getSalesVolume

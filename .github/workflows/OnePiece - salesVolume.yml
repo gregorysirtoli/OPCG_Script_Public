@@ -1,4 +1,4 @@
-name: Run Sales Volume (Lorcana)
+name: Run Sales Volume (One Piece)
 
 on:
   workflow_dispatch: # manual trigger
@@ -12,12 +12,13 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       # Variabili richieste dallo script
-      MONGODB_URI: ${{ secrets.MONGODB_URI_LORCANA }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB_LORCANA }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      GAME: "ONE PIECE"
 
     steps:
       - name: Checkout repo

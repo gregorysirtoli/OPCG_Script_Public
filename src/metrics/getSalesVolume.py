@@ -418,6 +418,7 @@ def main() -> int:
     try:
         MONGO_URI = os.environ["MONGODB_URI"]
         MONGODB_DB = os.environ["MONGODB_DB"]
+        GAME = os.getenv("GAME") or "N/A"
 
         client = MongoClient(MONGO_URI)
         db = client[MONGODB_DB]
@@ -454,11 +455,11 @@ def main() -> int:
             summary += "✓ No missing weekly volumes\n"
 
         print(summary)
-        send_email("✅ [4/5][WORKFLOW] Sales Volume", summary)
+        send_email("✅ [4/5][WORKFLOW] Sales Volume: "+ GAME, summary)
         return 0
 
     except Exception:
-        send_email("🚫 [4/5][WORKFLOW] Sales Volume", traceback.format_exc())
+        send_email("🚫 [4/5][WORKFLOW] Sales Volume: "+ GAME, traceback.format_exc())
         raise
 
 

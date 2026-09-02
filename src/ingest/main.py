@@ -411,7 +411,9 @@ def main() -> int:
         f"Inserted: {inserted}\n"
         f"Scanned: {total}"
     )
-    send_email("✅ [1/5][WORKFLOW] Prices Ingestor", body)
+
+    GAME = os.getenv("GAME") or "N/A";
+    send_email("✅ [1/5][WORKFLOW] Prices Ingestor: " + GAME, body)
 
     if secondary_alerts:
         lines = ["<b>PriceCharting URL issues detected:</b><br><br>"]
@@ -451,9 +453,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    GAME = os.getenv("GAME") or "N/A"
     try:
-        send_email("⚠️ [1/5][WORKFLOW] START - Prices Ingestor", traceback.format_exc())
+        send_email(f"⚠️ [1/5][WORKFLOW] START - Prices Ingestor: {GAME}", traceback.format_exc())
         sys.exit(main())
-    except Exception:
-        send_email("🚫 [1/5][WORKFLOW] Prices Ingestor", traceback.format_exc())
+    except Exception:     
+        send_email(f"🚫 [1/5][WORKFLOW] Prices Ingestor: {GAME}", traceback.format_exc())
         raise

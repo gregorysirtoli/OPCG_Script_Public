@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from src.core.config import load_settings
@@ -17,6 +18,7 @@ load_dotenv()
 logger = configure_logger()
 
 if __name__ == "__main__":
+    GAME = os.getenv("GAME") or "N/A"
     try:
         # Timer start
         start_time = time.time()
@@ -57,7 +59,7 @@ if __name__ == "__main__":
             f"End:   {end_dt:%Y-%m-%d %H:%M:%S}\n"
             f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)"
         )
-        send_email("✅ [2/5][WORKFLOW] Market Data", body)
+        send_email("✅ [2/5][WORKFLOW] Market Data: "+ GAME, body)
     except Exception:
-        send_email("🚫 [2/5][WORKFLOW] Market Data", traceback.format_exc())
+        send_email("🚫 [2/5][WORKFLOW] Market Data: "+ GAME, traceback.format_exc())
         raise

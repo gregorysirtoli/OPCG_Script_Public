@@ -1,17 +1,19 @@
-name: Run Sales Volume
+name: Run Tierlist (One Piece)
 
 on:
-  workflow_dispatch: # manual trigger
-  schedule: # esecuzione giornaliera alle 23:00 Europe/Rome
-    - cron: "0 21 * * *" # UTC -> 23:00 CEST (estate) / 22:00 CET (inverno)
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Run MarketData (One Piece)"]
+    types:
+      - completed
 
 jobs:
-  run-sales-volume:
+  run-tierlist:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
 
     env:
       PYTHONUNBUFFERED: "1"
-      # Variabili richieste dallo script
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
       MONGODB_DB: ${{ secrets.MONGODB_DB }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
@@ -35,6 +37,6 @@ jobs:
             python -m pip install -r requirements.txt
           fi
 
-      - name: Run Sales Volume script
+      - name: Run Tierlist script
         run: |
-          python -m src.metrics.getSalesVolume
+          python -m src.tierlist.getTierlist

@@ -18,7 +18,8 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       CARDTRADER_AUTH_TOKEN: ${{ secrets.CARDTRADER_AUTH_TOKEN }}
-      MAIL_SUBJECT: "[Ingestor] Prices report - One Piece"
+      MAIL_SUBJECT: ""
+      GAME: "ONE PIECE"
 
       # Private providers
       PROVIDERS_MODULE: private_providers.bundle

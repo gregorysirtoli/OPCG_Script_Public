@@ -1,12 +1,13 @@
-﻿name: Run Prediction Training
+﻿name: Run Prediction Daily (One Piece)
 
 on:
   workflow_dispatch:
-  schedule: # weekly (on monday) Europe/Rome (CET/CEST)
-    - cron: "0 4 * * 1" # 04:00 UTC = 05:00 CET / 06:00 CEST
+  schedule:
+    # 19:00 Europe/Rome = 17:00 UTC during CEST
+    - cron: "0 17 * * *"
 
 jobs:
-  train-models:
+  predict-and-store:
     runs-on: ubuntu-24.04
 
     env:
@@ -22,13 +23,20 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Cache trained artifacts
+      - name: Restore trained artifacts
         uses: actions/cache@v4
         with:
           path: artifacts
           key: optcg-artifacts-${{ github.run_id }}
           restore-keys: |
             optcg-artifacts-
+
+      - name: Ensure model artifacts exist
+        run: |
+          if [ ! -f artifacts/optcg_quantile_artifacts.joblib ]; then
+            echo "Missing artifacts/optcg_quantile_artifacts.joblib. Run mlTrain workflow first."
+            exit 1
+          fi
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -41,6 +49,6 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r src/prediction/requirements.txt
 
-      - name: Train prediction models
+      - name: Run daily predictions
         run: |
-          python -m src.prediction.run_train
+          python -m src.prediction.run_predict
