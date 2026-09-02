@@ -1,4 +1,4 @@
-name: Run Prices (Riftbound)
+name: Riftbound - Run Prices
 
 on:
   workflow_dispatch: # manual trigger
@@ -18,7 +18,8 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       CARDTRADER_AUTH_TOKEN: ${{ secrets.CARDTRADER_AUTH_TOKEN }}
-      MAIL_SUBJECT: "[Ingestor] Prices report - Riftbound"
+      MAIL_SUBJECT: ""
+      GAME: "RIFTBOUND"
 
       # Private providers
       PROVIDERS_MODULE: private_providers.bundle
