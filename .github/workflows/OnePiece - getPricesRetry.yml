@@ -21,6 +21,7 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       MAIL_SUBJECT: "[Ingestor] Prices retry PriceCharting URI errors report"
+      GAME: "ONE PIECE"
 
       PROVIDERS_MODULE: private_providers.bundle
 
