@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import exp, log1p, sqrt, tanh
@@ -6,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pymongo import InsertOne, UpdateOne
 from pymongo.database import Database
+from pymongo.errors import ExecutionTimeout
 
 GRADING_FEES = 30
 SET_TREND_DAYS = 90
@@ -143,6 +145,42 @@ STAMP_RULES = {
         "kind": "supply",
     },
 }
+
+
+def _bulk_write_resilient(
+    collection: Any,
+    operations: List[Any],
+    *,
+    ordered: bool = False,
+    initial_chunk_size: int = 1000,
+    min_chunk_size: int = 25,
+) -> Tuple[int, int]:
+    if not operations:
+        return (0, 0)
+
+    chunk_size = max(1, int(initial_chunk_size))
+    min_size = max(1, int(min_chunk_size))
+    pending = deque(
+        operations[i : i + chunk_size] for i in range(0, len(operations), chunk_size)
+    )
+
+    modified_total = 0
+    upserted_total = 0
+
+    while pending:
+        batch = pending.popleft()
+        try:
+            res = collection.bulk_write(batch, ordered=ordered)
+            modified_total += res.modified_count or 0
+            upserted_total += res.upserted_count or 0
+        except ExecutionTimeout:
+            if len(batch) <= min_size:
+                raise
+            split_at = max(1, len(batch) // 2)
+            pending.appendleft(batch[split_at:])
+            pending.appendleft(batch[:split_at])
+
+    return (modified_total, upserted_total)
 
 def _clamp(n: Optional[float], low: float, high: float) -> Optional[float]:
     if n is None:
@@ -2067,10 +2105,18 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
             history_ops.append(InsertOne(history_snapshot))
 
     if ops:
-        res = coll_sets.bulk_write(ops, ordered=False)
-        updated = (res.modified_count or 0) + (res.upserted_count or 0)
+        modified_count, upserted_count = _bulk_write_resilient(
+            coll_sets,
+            ops,
+            ordered=False,
+        )
+        updated = modified_count + upserted_count
     if history_ops:
-        coll_history.bulk_write(history_ops, ordered=False)
+        _bulk_write_resilient(
+            coll_history,
+            history_ops,
+            ordered=False,
+        )
 
     return (touched, updated)
 
@@ -2383,12 +2429,24 @@ def update_cards_market_data(
             ops.append(UpdateOne({"id": cid}, {"$set": {"marketData": md}}))
 
     if ops:
-        res = coll_cards.bulk_write(ops, ordered=False)
-        updated = (res.modified_count or 0) + (res.upserted_count or 0)
+        modified_count, upserted_count = _bulk_write_resilient(
+            coll_cards,
+            ops,
+            ordered=False,
+        )
+        updated = modified_count + upserted_count
     if stamp_snapshot_ops:
-        coll_card_stamps.bulk_write(stamp_snapshot_ops, ordered=False)
+        _bulk_write_resilient(
+            coll_card_stamps,
+            stamp_snapshot_ops,
+            ordered=False,
+        )
     if stamp_change_ops:
-        coll_card_stamp_changes.bulk_write(stamp_change_ops, ordered=False)
+        _bulk_write_resilient(
+            coll_card_stamp_changes,
+            stamp_change_ops,
+            ordered=False,
+        )
 
     sets_touched, sets_updated = update_sets_market_data(db, affected_set_ids)
     return (touched, updated, sets_touched, sets_updated)
