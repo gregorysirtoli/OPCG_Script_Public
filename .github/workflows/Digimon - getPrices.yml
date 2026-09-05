@@ -1,0 +1,74 @@
+name: Digimon - Run Prices
+
+on:
+  workflow_dispatch: # manual trigger
+  schedule:
+    - cron: "12 3 * * *" # UTC -> CEST (UTC+2) ~= 05:12 in Europe/Rome (CEST)
+
+jobs:
+  run-batches:
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: 1
+      MONGODB_URI: ${{ secrets.MONGODB_URI_DIGIMON }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_DIGIMON }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      CARDTRADER_AUTH_TOKEN: ${{ secrets.CARDTRADER_AUTH_TOKEN }}
+      MAIL_SUBJECT: ""
+      GAME: "DIGIMON"
+
+      # Private providers
+      PROVIDERS_MODULE: private_providers.bundle
+
+      # === PRIMARY (RED01) ===
+      PRIMARY_URL_TEMPLATE: ${{ secrets.PRIMARY_URL_TEMPLATE }}
+      PRIMARY_REFERER_TEMPLATE: ${{ secrets.PRIMARY_REFERER_TEMPLATE }}
+      PRIMARY_HEADER_TEMPLATE: ${{ secrets.PRIMARY_HEADER_TEMPLATE }}
+
+      # === SECONDARY (RED02) ===
+      SECONDARY_LABEL_MAP: ${{ secrets.SECONDARY_LABEL_MAP }}
+      SECONDARY_SELECTORS: ${{ secrets.SECONDARY_SELECTORS }}
+
+      # === CM (RED04) ===
+      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_DIGIMON }}
+      CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL }}
+
+      # ===  FX ===
+      FX_API_URL: ${{ secrets.FX_API_URL }}
+
+      # === FIELD MAPPING ===
+      ITEM_ID_FIELD: id
+      PRIMARY_ID_FIELD: ${{ secrets.PRIMARY_ID_FIELD }}
+      EXTERNAL_URI_FIELD: ${{ secrets.EXTERNAL_URI_FIELD }}
+      EXTERNAL_ID_FIELD: ${{ secrets.EXTERNAL_ID_FIELD }}
+      CM_ID_FIELD: ${{ secrets.CM_ID_FIELD }}
+
+      # tuning già presenti
+      PRICES_BATCH: 500
+      MONGO_PAGE_SIZE: 200
+      SAMPLE_LIMIT: 0
+      RATE_PER_SEC: 1.2
+      BURST: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # checkout private providers
+      - uses: actions/checkout@v4
+        with:
+          repository: gregorysirtoli/OPCG_Script_Private
+          token: ${{ secrets.PROVIDERS_TOKEN }}
+          path: private_providers
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: python -m pip install -r requirements.txt
+
+      - name: Run shard
+        run: python -m src.ingest.main --shard-index "0" --shard-total "1"
