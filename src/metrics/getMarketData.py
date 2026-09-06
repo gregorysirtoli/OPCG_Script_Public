@@ -316,6 +316,12 @@ def _to_number(v: Any) -> Optional[float]:
     except Exception:
         return None
 
+def _to_positive_number(v: Any) -> Optional[float]:
+    n = _to_number(v)
+    if n is None or n <= 0:
+        return None
+    return n
+
 def _round2(n: Optional[float]) -> Optional[float]:
     if n is None:
         return None
@@ -337,6 +343,15 @@ def _compute_price_confidence_score(
     """Returns a weighted 0-1 score indicating how many independent price sources
     corroborate the displayed price. Higher = more reliable.
     """
+    price_primary = _to_positive_number(price_primary)
+    price_trend = _to_positive_number(price_trend)
+    price_secondary = _to_positive_number(price_secondary)
+    price_tertiary = _to_positive_number(price_tertiary)
+    price_cardtrader = _to_positive_number(price_cardtrader)
+    price_pricecharting = _to_positive_number(price_pricecharting)
+    price_7d = _to_positive_number(price_7d)
+    price_30d = _to_positive_number(price_30d)
+
     score = 0.0
     if price_primary is not None or price_trend is not None:
         score += 0.30
@@ -357,13 +372,13 @@ def _compute_price_confidence_score(
 
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     redline_values = [
-        _to_number((doc or {}).get("pricePrimary")),
-        _to_number((doc or {}).get("cmPriceTrend")),
-        _to_number((doc or {}).get("cmPriceLow")),
-        _to_number((doc or {}).get("cmAvg30d")),
-        _to_number((doc or {}).get("priceYuyuTei")),
-        _to_number((doc or {}).get("pricePriceCharting")),
-        _to_number((doc or {}).get("priceCardTrader")),
+        _to_positive_number((doc or {}).get("pricePrimary")),
+        _to_positive_number((doc or {}).get("cmPriceTrend")),
+        _to_positive_number((doc or {}).get("cmPriceLow")),
+        _to_positive_number((doc or {}).get("cmAvg30d")),
+        _to_positive_number((doc or {}).get("priceYuyuTei")),
+        _to_positive_number((doc or {}).get("pricePriceCharting")),
+        _to_positive_number((doc or {}).get("priceCardTrader")),
     ]
     redline_values = [value for value in redline_values if value is not None]
     return _round2(sum(redline_values) / len(redline_values)) if redline_values else None
@@ -534,7 +549,7 @@ def _best_usd(doc: Dict[str, Any]) -> Optional[float]:
     # All prices in USD. If no pricePrimary, use priority fallback.
     for k in ("cmPriceTrend", "priceYuyuTei", "priceUngraded", "pricePriceCharting",
               "cmPriceLow", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "priceCardTrader"):
-        v = _to_number(doc.get(k))
+        v = _to_positive_number(doc.get(k))
         if v is not None:
             return v
     return None
@@ -597,17 +612,17 @@ def _pick_series_now(latest: Optional[Dict[str, Any]]) -> SeriesInfo:
     doc = latest or {}
 
     # 1) prefer cmPriceTrend
-    trend = _to_number(doc.get("cmPriceTrend"))
+    trend = _to_positive_number(doc.get("cmPriceTrend"))
     if trend is not None:
         return SeriesInfo(price_now_usd=trend, used_primary=True)
 
     # 2) fallback pricePrimary
-    p_primary = _to_number(doc.get("pricePrimary"))
+    p_primary = _to_positive_number(doc.get("pricePrimary"))
     if p_primary is not None:
         return SeriesInfo(price_now_usd=p_primary, used_primary=True)
 
     # 3) fallback price third provider
-    p_tertiary = _to_number(doc.get("priceYuyuTei"))
+    p_tertiary = _to_positive_number(doc.get("priceYuyuTei"))
     if p_tertiary is not None:
         return SeriesInfo(price_now_usd=p_tertiary, used_primary=False)
 
@@ -627,10 +642,10 @@ def _pick_baselines(
     if used_primary:
         def getter(d: Optional[Dict[str, Any]]) -> Optional[float]:
             dd = d or {}
-            v = _to_number(dd.get("cmPriceTrend"))
+            v = _to_positive_number(dd.get("cmPriceTrend"))
             if v is not None:
                 return v
-            return _to_number(dd.get("pricePrimary"))
+            return _to_positive_number(dd.get("pricePrimary"))
     else:
         getter = lambda d: _best_usd(d or {})
 
@@ -663,19 +678,19 @@ def _as_number_or_none(v: Any) -> Optional[float]:
 def _effective_price_from_snapshot(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     if not doc:
         return None
-    primary = _to_number(doc.get("pricePrimary"))
+    primary = _to_positive_number(doc.get("pricePrimary"))
     if primary is not None:
         return _safe_round2(primary)
-    trend = _to_number(doc.get("cmPriceTrend"))
+    trend = _to_positive_number(doc.get("cmPriceTrend"))
     if trend is not None:
         return _safe_round2(trend)
-    tertiary = _to_number(doc.get("priceYuyuTei"))
+    tertiary = _to_positive_number(doc.get("priceYuyuTei"))
     if tertiary is not None:
         return _safe_round2(tertiary)
-    low = _to_number(doc.get("cmPriceLow"))
+    low = _to_positive_number(doc.get("cmPriceLow"))
     if low is not None:
         return _safe_round2(low)
-    cardtrader = _to_number(doc.get("priceCardTrader"))
+    cardtrader = _to_positive_number(doc.get("priceCardTrader"))
     if cardtrader is not None:
         return _safe_round2(cardtrader)
     return None
@@ -1299,7 +1314,7 @@ def compute_market_data_for_item(
         # marketData
         "sellers": sellers if sellers is not None else None,
         "listings": listings if listings is not None else None,
-        "price": _as_number_or_none(s.price_now_usd), # USD
+        "price": _as_number_or_none(price_redline), # USD
         "pricePrimary": _as_number_or_none((latest or {}).get("pricePrimary")), # USD
         "pricePriceCharting": _as_number_or_none((latest or {}).get("pricePriceCharting")), # USD
         "priceSecondary": _as_number_or_none(price_secondary), # USD
