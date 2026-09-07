@@ -284,6 +284,10 @@ def main() -> int:
                             for field_name, field_value in variant_prices.items():
                                 if field_name == "pricePrimary" or field_name.startswith("pricePrimary_v"):
                                     row[field_name] = float(field_value)
+                            if variant_prices:
+                                print(
+                                    f"[DEBUG] Primary variants | itemId={item_id} | primaryId={primary_id} | variants={card_variants} | fields={variant_prices}"
+                                )
                     except Exception as exc:
                         logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, exc)
 
