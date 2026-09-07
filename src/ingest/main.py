@@ -129,6 +129,7 @@ def main() -> int:
     projection = {
         "_id": 1,
         ITEM_ID_FIELD: 1,
+        "variants": 1,
         "name": 1,
         "localId": 1,
         "type": 1,
@@ -211,6 +212,7 @@ def main() -> int:
                 #    continue
 
                 primary_id = doc.get(PRIMARY_ID_FIELD)
+                card_variants = doc.get("variants") if isinstance(doc.get("variants"), list) else []
                 external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
                 external_id = doc.get(EXTERNAL_ID_FIELD)
                 cm_id = doc.get(CM_ID_FIELD)
@@ -238,6 +240,12 @@ def main() -> int:
                             row["tcgLowestPrice"] = float(tcg_lowest_price)
                         if tcg_median_price is not None:
                             row["tcgMedianPrice"] = float(tcg_median_price)
+
+                        if len(card_variants) >= 2 and hasattr(primary, "fetch_primary_variant_prices"):
+                            variant_prices = primary.fetch_primary_variant_prices(primary_id, card_variants) or {}
+                            for field_name, field_value in variant_prices.items():
+                                if field_name == "pricePrimary" or field_name.startswith("pricePrimary_v"):
+                                    row[field_name] = float(field_value)
                     except Exception as e:
                         logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, e)
 
