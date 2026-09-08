@@ -118,25 +118,62 @@ def tier_by_test_ratio(test_ratio: float) -> str:
     return "C"
 
 
-MERGED_SET_RULES: Dict[str, List[str]] = {
-    "OP01E": ["OP01", "OP01E"],
-}
+def rebalance_tiers_min_one(
+    tier_entries: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Prova a garantire almeno 1 elemento per tier quando il numero totale di set lo consente.
+    Sposta set dai tier con piu elementi verso tier vuoti scegliendo il candidato
+    con test_ratio piu vicino al centro della fascia target.
+    """
+    order = ["S", "A+", "A", "B", "C"]
+    centers = {
+        "S": 0.35,
+        "A+": 0.25,
+        "A": 0.16,
+        "B": 0.09,
+        "C": 0.03,
+    }
 
+    total_items = sum(len(tier_entries.get(t, [])) for t in order)
+    if total_items < len(order):
+        return {
+            t: [row["item"] for row in tier_entries.get(t, [])]
+            for t in order
+        }
 
-def resolve_card_set_ids(set_id: str, requested_set_ids: List[str]) -> Optional[List[str]]:
-    for canonical_set_id, member_set_ids in MERGED_SET_RULES.items():
-        if set_id not in member_set_ids:
+    for target_tier in order:
+        if tier_entries.get(target_tier):
             continue
-        if canonical_set_id not in requested_set_ids:
+
+        best_donor_tier: Optional[str] = None
+        best_idx = -1
+        best_distance = float("inf")
+        target_center = centers[target_tier]
+
+        for donor_tier in order:
+            donor_rows = tier_entries.get(donor_tier, [])
+            if len(donor_rows) <= 1:
+                continue
+
+            for idx, row in enumerate(donor_rows):
+                ratio = float(row.get("test_ratio") or 0.0)
+                distance = abs(ratio - target_center)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_donor_tier = donor_tier
+                    best_idx = idx
+
+        if best_donor_tier is None or best_idx < 0:
             continue
 
-        # Il set canonico usa il merge; gli altri membri restano autonomi.
-        if set_id != canonical_set_id:
-            return [set_id]
+        moved = tier_entries[best_donor_tier].pop(best_idx)
+        tier_entries[target_tier].append(moved)
 
-        return member_set_ids
-
-    return [set_id]
+    return {
+        t: [row["item"] for row in tier_entries.get(t, [])]
+        for t in order
+    }
 
 
 def detect_market_from_label(label: str) -> str:
@@ -180,6 +217,7 @@ def build_tierlist(
     only_visible: bool = True
 ) -> Tuple[dict, List[dict]]:
     tiers = {"S": [], "A+": [], "A": [], "B": [], "C": []}
+    tier_entries: Dict[str, List[Dict[str, Any]]] = {"S": [], "A+": [], "A": [], "B": [], "C": []}
     report_rows: List[dict] = []
 
     # buffer print ordinato
@@ -206,26 +244,13 @@ def build_tierlist(
         if not set_id:
             continue
 
-        card_set_ids = resolve_card_set_ids(str(set_id), set_ids)
-        if not card_set_ids:
-            continue
-
         sealed_id = s.get("sealedId")
-        if not sealed_id and len(card_set_ids) > 1:
-            for member_set_id in card_set_ids:
-                member_set = sets_by_id.get(member_set_id)
-                if member_set and member_set.get("sealedId"):
-                    sealed_id = member_set.get("sealedId")
-                    break
 
         # Costo box (da Prices, default 200)
         box_cost = get_box_cost(db, sealed_id, default_cost=200.0)
 
         # Query carte
-        if len(card_set_ids) > 1:
-            q = {"setId": {"$in": card_set_ids}, "type": "Cards"}
-        else:
-            q = {"setId": set_id, "type": "Cards"}
+        q = {"setId": set_id, "type": "Cards"}
         if only_visible:
             q["visible"] = True
 
@@ -290,7 +315,10 @@ def build_tierlist(
         set_image = get_set_image(db, s, sealed_id, sealed_image_cache)
         if set_image:
             tier_item["image"] = set_image
-        tiers[tier].append(tier_item)
+        tier_entries[tier].append({
+            "item": tier_item,
+            "test_ratio": test_ratio,
+        })
 
         # report dettagliato
         row = {
@@ -332,6 +360,7 @@ def build_tierlist(
             for line in print_buffer[t]:
                 print(line)
 
+    tiers = rebalance_tiers_min_one(tier_entries)
     return tiers, report_rows
 
 
