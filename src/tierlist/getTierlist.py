@@ -75,6 +75,34 @@ def get_box_cost(db, sealed_id: Optional[str], default_cost: float = 200.0) -> f
     return price if price is not None else default_cost
 
 
+def get_set_image(
+    db,
+    set_doc: Dict[str, Any],
+    fallback_sealed_id: Optional[str],
+    sealed_image_cache: Dict[str, Optional[str]],
+) -> Optional[str]:
+    """
+    Restituisce l'immagine del set con priorita:
+    1) Sets.image
+    2) Cards.localImage cercando la card con id == sealedId
+    """
+    set_image = str(set_doc.get("image") or "").strip()
+    if set_image:
+        return set_image
+
+    if not fallback_sealed_id:
+        return None
+
+    if fallback_sealed_id in sealed_image_cache:
+        return sealed_image_cache[fallback_sealed_id]
+
+    card_doc = db.Cards.find_one({"id": fallback_sealed_id}, {"localImage": 1})
+    local_image = str((card_doc or {}).get("localImage") or "").strip()
+    value = local_image or None
+    sealed_image_cache[fallback_sealed_id] = value
+    return value
+
+
 # ============================================================
 # TIER SOLO SU test_ratio
 # ============================================================
@@ -111,6 +139,37 @@ def resolve_card_set_ids(set_id: str, requested_set_ids: List[str]) -> Optional[
     return [set_id]
 
 
+def detect_market_from_label(label: str) -> str:
+    """
+    Estrae il market dal label della tierlist, es. "STARTER DECK (EN)" -> "en".
+    Fallback: "global".
+    """
+    s = (label or "").strip()
+    if "(" in s and ")" in s and s.rfind("(") < s.rfind(")"):
+        market = s[s.rfind("(") + 1 : s.rfind(")")].strip().lower()
+        if market:
+            return market
+    return "global"
+
+
+def get_set_ids_for_tierlist(db, tierlist_id: Any) -> List[str]:
+    """
+    Recupera dinamicamente tutti i set associati alla tierlist tramite Sets.tierListIds._id.
+    """
+    docs = list(
+        db.Sets.find(
+            {"tierListIds._id": tierlist_id},
+            {"id": 1},
+        )
+    )
+    out: List[str] = []
+    for d in docs:
+        sid = str(d.get("id") or "").strip()
+        if sid:
+            out.append(sid)
+    return out
+
+
 # ============================================================
 # CORE BUILDER (tiers + report_rows)
 # ============================================================
@@ -129,7 +188,7 @@ def build_tierlist(
     sets = list(
         db.Sets.find(
             {"id": {"$in": set_ids}},
-            {"id": 1, "name": 1, "sealedId": 1}
+            {"id": 1, "name": 1, "sealedId": 1, "image": 1}
         )
     )
     sets_by_id = {
@@ -139,6 +198,7 @@ def build_tierlist(
     }
 
     cards_col = db.Cards
+    sealed_image_cache: Dict[str, Optional[str]] = {}
 
     for s in sets:
         set_id = s.get("id")
@@ -226,7 +286,11 @@ def build_tierlist(
         tier = tier_by_test_ratio(test_ratio)
 
         # tiers in output finale (Mongo)
-        tiers[tier].append({"name": set_name, "id": set_id})
+        tier_item = {"name": set_name, "id": set_id}
+        set_image = get_set_image(db, s, sealed_id, sealed_image_cache)
+        if set_image:
+            tier_item["image"] = set_image
+        tiers[tier].append(tier_item)
 
         # report dettagliato
         row = {
@@ -276,52 +340,62 @@ def build_tierlist(
 # ============================================================
 if __name__ == "__main__":
     try:
+        GAME = os.getenv("GAME") or "N/A"
         client = MongoClient(MONGO_URI)
         db = client[MONGODB_DB]
 
-        # ---------------- EN ----------------
-        #print("\n✅ [TIERLIST] GLOBAL (EN)")
-        OP_IDS_EN = [
-            "OP01E", "OP01", "OP02", "OP03", "OP04", "OP05", "OP06",
-            "OP07", "OP08", "OP09", "OP10", "OP11", "OP12",
-            "OP13", "OP14", "OP15", "OP16", "OP17",
-            "EB01", "EB02", "EB03", 
-            "PRB01", "PRB02"
-        ]
+        tierlists = list(
+            db.Tierlist.find(
+                {},
+                {"_id": 1, "label": 1},
+            )
+        )
 
-        tiers_en, report_en = build_tierlist(db, OP_IDS_EN, market="en", only_visible=True)
+        if not tierlists:
+            print("\n[WARN] Nessuna tierlist trovata in collection Tierlist.")
 
-        # ✅ SALVATAGGIO con output identico al JSON che vuoi
-        db.Tierlist.delete_many({"language": "en"})
-        db.Tierlist.insert_one({
-            "date": datetime.now(timezone.utc),
-            "language": "en",
-            "tiers": tiers_en
-        })
+        for tl in tierlists:
+            tl_id = tl.get("_id")
+            label = str(tl.get("label") or "").strip()
+            market = detect_market_from_label(label)
 
-        # ---------------- JP ----------------
-        #print("\n✅ [TIERLIST] JAPANESE (JP)")
-        OP_IDS_JP = [
-            "OP01JP", "OP02JP", "OP03JP", "OP04JP", "OP05JP", "OP06JP",
-            "OP07JP", "OP08JP", "OP09JP", "OP10JP", "OP11JP", "OP12JP",
-            "OP13JP", "OP14JP", "OP15JP", "OP16JP", "OP17JP",
-            "EB01JP", "EB02JP", "EB03JP", "EB04JP", 
-            "PRB01JP", "PRB02JP"
-        ]
+            if not tl_id:
+                continue
 
-        tiers_jp, report_jp = build_tierlist(db, OP_IDS_JP, market="jp", only_visible=True)
+            set_ids = get_set_ids_for_tierlist(db, tl_id)
 
-        # ✅ SALVATAGGIO con output identico al JSON che vuoi
-        db.Tierlist.delete_many({"language": "jp"})
-        db.Tierlist.insert_one({
-            "date": datetime.now(timezone.utc),
-            "language": "jp",
-            "tiers": tiers_jp
-        })
+            if not set_ids:
+                empty_tiers = {"S": [], "A+": [], "A": [], "B": [], "C": []}
+                db.Tierlist.update_one(
+                    {"_id": tl_id},
+                    {
+                        "$set": {
+                            "tiers": empty_tiers,
+                            "updatedAt": datetime.now(timezone.utc),
+                        }
+                    },
+                )
+                print(f"\n[WARN] Tierlist '{label}' senza set associati. Salvata tiers vuota.")
+                continue
+
+            tiers, _report = build_tierlist(db, set_ids, market=market, only_visible=True)
+
+            # Salvataggio: tiers come elemento del documento anagrafico Tierlist.
+            db.Tierlist.update_one(
+                {"_id": tl_id},
+                {
+                    "$set": {
+                        "tiers": tiers,
+                        "updatedAt": datetime.now(timezone.utc),
+                    }
+                },
+            )
+
+            print(f"\n[OK] Tierlist aggiornata: {label} | sets={len(set_ids)}")
 
         print("\n✅ [END] Fine processo creazione tierlist.")
-        send_email("✅ [3/5][WORKFLOW] Tierlist", "")
+        send_email("✅ [3/5][WORKFLOW] Tierlist " + GAME, "", "")
 
     except Exception:
-        send_email("🚫 [3/5][WORKFLOW] Tierlist", traceback.format_exc())
+        send_email("🚫 [3/5][WORKFLOW] Tierlist " + GAME, traceback.format_exc(), "")
         raise
