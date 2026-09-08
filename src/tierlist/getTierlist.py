@@ -122,9 +122,9 @@ def rebalance_tiers_min_one(
     tier_entries: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Prova a garantire almeno 1 elemento per tier quando il numero totale di set lo consente.
-    Sposta set dai tier con piu elementi verso tier vuoti scegliendo il candidato
-    con test_ratio piu vicino al centro della fascia target.
+    Prova a garantire almeno 1 elemento per tier minimizzando salti incoerenti.
+    Usa movimenti adiacenti a passi (es. B->A, poi A->A+, poi A+->S),
+    evitando spostamenti diretti lunghi come B->S.
     """
     order = ["S", "A+", "A", "B", "C"]
     centers = {
@@ -135,45 +135,82 @@ def rebalance_tiers_min_one(
         "C": 0.03,
     }
 
-    total_items = sum(len(tier_entries.get(t, [])) for t in order)
-    if total_items < len(order):
-        return {
-            t: [row["item"] for row in tier_entries.get(t, [])]
-            for t in order
-        }
-
-    for target_tier in order:
-        if tier_entries.get(target_tier):
-            continue
-
-        best_donor_tier: Optional[str] = None
-        best_idx = -1
+    def pop_best_row(rows: List[Dict[str, Any]], target_center: float) -> Dict[str, Any]:
+        best_idx = 0
         best_distance = float("inf")
-        target_center = centers[target_tier]
+        for idx, row in enumerate(rows):
+            ratio = float(row.get("test_ratio") or 0.0)
+            distance = abs(ratio - target_center)
+            if distance < best_distance:
+                best_distance = distance
+                best_idx = idx
+        return rows.pop(best_idx)
 
-        for donor_tier in order:
-            donor_rows = tier_entries.get(donor_tier, [])
-            if len(donor_rows) <= 1:
-                continue
-
-            for idx, row in enumerate(donor_rows):
-                ratio = float(row.get("test_ratio") or 0.0)
-                distance = abs(ratio - target_center)
-                if distance < best_distance:
-                    best_distance = distance
-                    best_donor_tier = donor_tier
-                    best_idx = idx
-
-        if best_donor_tier is None or best_idx < 0:
-            continue
-
-        moved = tier_entries[best_donor_tier].pop(best_idx)
-        tier_entries[target_tier].append(moved)
-
-    return {
-        t: [row["item"] for row in tier_entries.get(t, [])]
+    # Copia difensiva della struttura
+    work: Dict[str, List[Dict[str, Any]]] = {
+        t: list(tier_entries.get(t, []))
         for t in order
     }
+
+    # Finche esistono tier vuoti, prova a riempirli con passi adiacenti.
+    # Esegue sia passata top-down che bottom-up per gestire vuoti in qualsiasi posizione.
+    max_iters = 500
+    for _ in range(max_iters):
+        empty_exists = any(len(work[t]) == 0 for t in order)
+        if not empty_exists:
+            break
+
+        moved_any = False
+
+        # Top-down: porta massa verso l'alto con passi adiacenti.
+        for target_idx in range(0, len(order) - 1):
+            target_tier = order[target_idx]
+            if work[target_tier]:
+                continue
+
+            donor_idx = None
+            for j in range(target_idx + 1, len(order)):
+                if len(work[order[j]]) > 1:
+                    donor_idx = j
+                    break
+            if donor_idx is None:
+                continue
+
+            donor_tier = order[donor_idx]
+            receiver_tier = order[donor_idx - 1]
+            row = pop_best_row(work[donor_tier], centers[receiver_tier])
+            work[receiver_tier].append(row)
+            moved_any = True
+
+        # Bottom-up: porta massa verso il basso con passi adiacenti.
+        for target_idx in range(len(order) - 1, 0, -1):
+            target_tier = order[target_idx]
+            if work[target_tier]:
+                continue
+
+            donor_idx = None
+            for j in range(target_idx - 1, -1, -1):
+                if len(work[order[j]]) > 1:
+                    donor_idx = j
+                    break
+            if donor_idx is None:
+                continue
+
+            donor_tier = order[donor_idx]
+            receiver_tier = order[donor_idx + 1]
+            row = pop_best_row(work[donor_tier], centers[receiver_tier])
+            work[receiver_tier].append(row)
+            moved_any = True
+
+        if not moved_any:
+            break
+
+    out: Dict[str, List[Dict[str, Any]]] = {
+        t: [row["item"] for row in work.get(t, [])]
+        for t in order
+    }
+
+    return out
 
 
 def detect_market_from_label(label: str) -> str:
