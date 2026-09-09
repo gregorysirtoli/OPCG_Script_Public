@@ -1,13 +1,17 @@
-name: Run PSA Cards Sales History
+name: One Piece - GradingPopulation
 
 on:
   workflow_dispatch:
   #schedule:
-  #  # Alle 14:00 italiane (12:00 UTC)
-  #  - cron: "0 12 * * *"
+  #  # Runs every Friday at 06:00 Italy in winter time (CET = UTC+1).
+  #  - cron: "0 5 * * 5"
+
+concurrency:
+  group: cards-grading-population
+  cancel-in-progress: false
 
 jobs:
-  run-cards-sales-history:
+  run-cards-grading-population:
     runs-on: ubuntu-24.04
 
     env:
@@ -22,8 +26,8 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
-      # Private providers modules
-      CARDS_SALES_HISTORY_MODULE: private_providers.cardsSalesHistory
+      # Private providers module path
+      CARDS_GRADING_POPULATION_MODULE: private_providers.cardsGradingPopulation
 
     steps:
       - name: Checkout repo
@@ -46,5 +50,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Run Cards Sales History
-        run: python -m src.metrics.getCardsSalesHistory
+      - name: Run Cards Grading Population
+        run: python -m src.metrics.getCardsGradingPopulation

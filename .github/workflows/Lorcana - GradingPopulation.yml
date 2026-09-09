@@ -1,4 +1,4 @@
-name: Run PSA Cards Grading Population
+name: Lorcana - GradingPopulation
 
 on:
   workflow_dispatch:
@@ -16,10 +16,10 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: "1"
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB }}
-      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI }}
-      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_LORCANA }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_LORCANA }}
+      MONGODB_SALES_URI: ${{ secrets.MONGODB_URI_LORCANA }}
+      MONGODB_SALES_DB: ${{ secrets.MONGODB_DB_LORCANA }}
       PSA_COOKIE: ${{ secrets.PSA_COOKIE }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
