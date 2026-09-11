@@ -104,16 +104,24 @@ def get_set_image(
 
 
 # ============================================================
-# TIER SOLO SU test_ratio
+# TIER: SEMPRE QUANTILE
 # ============================================================
-def tier_by_test_ratio(test_ratio: float) -> str:
-    if test_ratio >= 0.30:
+QUANTILE_THRESHOLDS: Tuple[float, float, float, float] = (0.10, 0.25, 0.45, 0.75)
+
+
+def tier_by_rank_quantile(rank_idx: int, total: int, thresholds: Tuple[float, float, float, float]) -> str:
+    if total <= 0:
+        return "C"
+
+    s_q, ap_q, a_q, b_q = thresholds
+    pct = (rank_idx + 1) / total
+    if pct <= s_q:
         return "S"
-    if test_ratio >= 0.20:
+    if pct <= ap_q:
         return "A+"
-    if test_ratio >= 0.12:
+    if pct <= a_q:
         return "A"
-    if test_ratio >= 0.06:
+    if pct <= b_q:
         return "B"
     return "C"
 
@@ -251,11 +259,12 @@ def build_tierlist(
     db,
     set_ids: List[str],
     market: str = "en",
-    only_visible: bool = True
+    only_visible: bool = True,
 ) -> Tuple[dict, List[dict]]:
     tiers = {"S": [], "A+": [], "A": [], "B": [], "C": []}
     tier_entries: Dict[str, List[Dict[str, Any]]] = {"S": [], "A+": [], "A": [], "B": [], "C": []}
     report_rows: List[dict] = []
+    scored_entries: List[Dict[str, Any]] = []
 
     # buffer print ordinato
     print_buffer = {"S": [], "A+": [], "A": [], "B": [], "C": []}
@@ -343,26 +352,20 @@ def build_tierlist(
         top3_gt10 = sorted(prezzi_oltre_10, reverse=True)[:3]
         icv = calcola_icv(prezzi_oltre_10)
 
-        # Tier SOLO da test_ratio
+        # Tier calcolato in seconda fase: quantile.
         test_ratio = (ev / box_cost) if (box_cost and box_cost > 0) else 0.0
-        tier = tier_by_test_ratio(test_ratio)
 
-        # tiers in output finale (Mongo)
         tier_item = {"name": set_name, "id": set_id}
         set_image = get_set_image(db, s, sealed_id, sealed_image_cache)
         if set_image:
             tier_item["image"] = set_image
-        tier_entries[tier].append({
-            "item": tier_item,
-            "test_ratio": test_ratio,
-        })
 
         # report dettagliato
         row = {
             "setId": set_id,
             "setName": set_name,
             "market": market,
-            "tier": tier,
+            "tier": "",
             "sealedId": sealed_id,
             "box_cost": round(box_cost, 2) if box_cost is not None else None,
             "total_cards": total_cards,
@@ -381,13 +384,51 @@ def build_tierlist(
             "icv": round(icv, 4),
             "test_ratio": round(test_ratio, 6),
         }
+
+        scored_entries.append(
+            {
+                "tier_item": tier_item,
+                "test_ratio": test_ratio,
+                "row": row,
+                "print_data": {
+                    "set_id": set_id,
+                    "total_cards": total_cards,
+                    "priced_cards": priced_cards,
+                    "missing_price": missing_price,
+                    "sum_prices": sum_prices,
+                    "ev": ev,
+                    "median": median,
+                    "pct10": pct10,
+                    "icv": icv,
+                    "box_cost": box_cost,
+                    "test_ratio": test_ratio,
+                },
+            }
+        )
+
+    if scored_entries:
+        ranked = sorted(scored_entries, key=lambda x: float(x["test_ratio"]), reverse=True)
+        for idx, entry in enumerate(ranked):
+            entry["tier"] = tier_by_rank_quantile(idx, len(ranked), QUANTILE_THRESHOLDS)
+
+    for entry in scored_entries:
+        tier = str(entry["tier"])
+        tier_entries[tier].append(
+            {
+                "item": entry["tier_item"],
+                "test_ratio": entry["test_ratio"],
+            }
+        )
+
+        row = entry["row"]
+        row["tier"] = tier
         report_rows.append(row)
 
-        # salva la riga di output nel buffer del suo tier (NON stampare qui)
+        pdata = entry["print_data"]
         print_buffer[tier].append(
-            f"[{market.upper()}] {set_id} | cards={total_cards} priced={priced_cards} miss={missing_price} | "
-            f"sum_prices={sum_prices:.2f} EV={ev:.2f} median={median:.2f} pct>10={pct10:.1f}% ICV={icv:.2f} "
-            f"box={box_cost:.0f} test_ratio={test_ratio:.4f}| tier={tier}"
+            f"[{market.upper()}] {pdata['set_id']} | cards={pdata['total_cards']} priced={pdata['priced_cards']} miss={pdata['missing_price']} | "
+            f"sum_prices={pdata['sum_prices']:.2f} EV={pdata['ev']:.2f} median={pdata['median']:.2f} pct>10={pdata['pct10']:.1f}% ICV={pdata['icv']:.2f} "
+            f"box={pdata['box_cost']:.0f} test_ratio={pdata['test_ratio']:.4f}| tier={tier}"
         )
 
     # ✅ stampa UNA SOLA VOLTA, a fine loop, in ordine tier
@@ -444,7 +485,12 @@ if __name__ == "__main__":
                 print(f"\n[WARN] Tierlist '{label}' senza set associati. Salvata tiers vuota.")
                 continue
 
-            tiers, _report = build_tierlist(db, set_ids, market=market, only_visible=True)
+            tiers, _report = build_tierlist(
+                db,
+                set_ids,
+                market=market,
+                only_visible=True,
+            )
 
             # Salvataggio: tiers come elemento del documento anagrafico Tierlist.
             db.Tierlist.update_one(
