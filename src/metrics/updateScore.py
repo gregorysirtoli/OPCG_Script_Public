@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import os
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
+from src.core.emailer import send_email
 
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env.local")
@@ -264,49 +266,56 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Update only score in Cards from TCGPlayer details API")
     parser.add_argument("--workers", type=int, default=8, help="Parallel workers for details API calls")
     args = parser.parse_args()
+    game = os.getenv("GAME") or "N/A"
 
-    require_env(["MONGODB_URI", "MONGODB_DB", "PRIMARY_URL_TEMPLATE"])
+    try:
+        require_env(["MONGODB_URI", "MONGODB_DB", "PRIMARY_URL_TEMPLATE"])
 
-    mongo_uri = os.environ["MONGODB_URI"]
-    mongodb_db = os.environ["MONGODB_DB"]
+        mongo_uri = os.environ["MONGODB_URI"]
+        mongodb_db = os.environ["MONGODB_DB"]
 
-    client = MongoClient(mongo_uri)
-    db = client[mongodb_db]
-    cards_col = db[CARDS_COLL]
+        client = MongoClient(mongo_uri)
+        db = client[mongodb_db]
+        cards_col = db[CARDS_COLL]
 
-    tcg_player_ids = sorted(
-        {
-            int(value)
-            for value in cards_col.distinct("tcgPlayerId", {"tcgPlayerId": {"$type": "number"}})
-            if as_int(value) is not None
-        }
-    )
+        tcg_player_ids = sorted(
+            {
+                int(value)
+                for value in cards_col.distinct("tcgPlayerId", {"tcgPlayerId": {"$type": "number"}})
+                if as_int(value) is not None
+            }
+        )
 
-    print(f"[UPDATE-SCORE] tcgPlayerIds discovered: {len(tcg_player_ids)}")
+        print(f"[UPDATE-SCORE] tcgPlayerIds discovered: {len(tcg_player_ids)}")
 
-    updated_docs, touched_ids, failures = update_scores(cards_col, tcg_player_ids, workers=args.workers)
+        updated_docs, touched_ids, failures = update_scores(cards_col, tcg_player_ids, workers=args.workers)
 
-    print(
-        "[UPDATE-SCORE] API phase completed "
-        f"| tcgPlayerIds_with_score={touched_ids} "
-        f"| modified_docs={updated_docs} "
-        f"| failures={failures}"
-    )
+        print(
+            "[UPDATE-SCORE] API phase completed "
+            f"| tcgPlayerIds_with_score={touched_ids} "
+            f"| modified_docs={updated_docs} "
+            f"| failures={failures}"
+        )
 
-    related_stats = sync_related_scores(cards_col)
+        related_stats = sync_related_scores(cards_col)
 
-    print(
-        "[UPDATE-SCORE] completed "
-        f"| api_modified_docs={updated_docs} "
-        f"| related_processed={related_stats['processed']} "
-        f"| related_updated={related_stats['updated']} "
-        f"| related_by_cardMarketIds={related_stats['matchedByCardMarketIds']} "
-        f"| related_by_cardTraderId={related_stats['matchedByCardTraderId']} "
-        f"| related_fallback_to_zero={related_stats['fallbackToZero']} "
-        f"| failures={failures}"
-    )
+        summary = (
+            "[UPDATE-SCORE] completed "
+            f"| api_modified_docs={updated_docs} "
+            f"| related_processed={related_stats['processed']} "
+            f"| related_updated={related_stats['updated']} "
+            f"| related_by_cardMarketIds={related_stats['matchedByCardMarketIds']} "
+            f"| related_by_cardTraderId={related_stats['matchedByCardTraderId']} "
+            f"| related_fallback_to_zero={related_stats['fallbackToZero']} "
+            f"| failures={failures}"
+        )
+        print(summary)
+        send_email("✅ [5/5][WORKFLOW] Update Score: " + game, summary)
 
-    client.close()
+        client.close()
+    except Exception:
+        send_email("🚫 [5/5][WORKFLOW] Update Score: " + game, traceback.format_exc())
+        raise
 
 
 if __name__ == "__main__":
