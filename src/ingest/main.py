@@ -129,6 +129,7 @@ def main() -> int:
     projection = {
         "_id": 1,
         ITEM_ID_FIELD: 1,
+        "variant": 1,
         "variants": 1,
         "name": 1,
         "localId": 1,
@@ -163,6 +164,7 @@ def main() -> int:
     BATCH = int(os.getenv("PRICES_BATCH", "500"))
     SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "0"))
     DISABLE_SHARDING = os.getenv("DISABLE_SHARDING", "false").lower() == "true"
+    TEST_ONLY_TCGPLAYER_ID = 492369
 
     rows_batch: List[Dict[str, Any]] = []
     secondary_alerts: List[Dict[str, Any]] = []
@@ -212,7 +214,11 @@ def main() -> int:
                 #    continue
 
                 primary_id = doc.get(PRIMARY_ID_FIELD)
+                #if primary_id != TEST_ONLY_TCGPLAYER_ID:
+                #    continue
+
                 card_variants = doc.get("variants") if isinstance(doc.get("variants"), list) else []
+                card_variant = str(doc.get("variant") or "").strip()
                 external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
                 external_id = doc.get(EXTERNAL_ID_FIELD)
                 cm_id = doc.get(CM_ID_FIELD)
@@ -242,13 +248,17 @@ def main() -> int:
                             row["tcgMedianPrice"] = float(tcg_median_price)
 
                         if len(card_variants) >= 2 and hasattr(primary, "fetch_primary_variant_prices"):
-                            variant_prices = primary.fetch_primary_variant_prices(primary_id, card_variants) or {}
+                            variant_prices = primary.fetch_primary_variant_prices(
+                                primary_id,
+                                card_variants,
+                                current_variant=card_variant,
+                            ) or {}
                             for field_name, field_value in variant_prices.items():
-                                if field_name == "pricePrimary" or field_name.startswith("pricePrimary_v"):
+                                if field_name == "pricePrimary":
                                     row[field_name] = float(field_value)
                             if variant_prices:
                                 print(
-                                    f"[DEBUG] Primary variants | itemId={item_id} | primaryId={primary_id} | variants={card_variants} | fields={variant_prices}"
+                                    f"[DEBUG] Primary variants | itemId={item_id} | primaryId={primary_id} | variant={card_variant} | variants={card_variants} | fields={variant_prices}"
                                 )
                     except Exception as e:
                         logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, e)

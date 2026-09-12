@@ -253,6 +253,7 @@ def main() -> int:
 
                 primary_id = doc.get(primary_id_field)
                 card_variants = doc.get("variants") if isinstance(doc.get("variants"), list) else []
+                card_variant = str(doc.get("variant") or "").strip()
                 external_uri = (doc.get(external_uri_field) or "") or None
                 external_id = doc.get(external_id_field)
                 cm_id = doc.get(cm_id_field)
@@ -280,13 +281,17 @@ def main() -> int:
                             row["tcgMedianPrice"] = float(tcg_median_price)
 
                         if len(card_variants) >= 2 and hasattr(primary, "fetch_primary_variant_prices"):
-                            variant_prices = primary.fetch_primary_variant_prices(primary_id, card_variants) or {}
+                            variant_prices = primary.fetch_primary_variant_prices(
+                                primary_id,
+                                card_variants,
+                                current_variant=card_variant,
+                            ) or {}
                             for field_name, field_value in variant_prices.items():
-                                if field_name == "pricePrimary" or field_name.startswith("pricePrimary_v"):
+                                if field_name == "pricePrimary":
                                     row[field_name] = float(field_value)
                             if variant_prices:
                                 print(
-                                    f"[DEBUG] Primary variants | itemId={item_id} | primaryId={primary_id} | variants={card_variants} | fields={variant_prices}"
+                                    f"[DEBUG] Primary variants | itemId={item_id} | primaryId={primary_id} | variant={card_variant} | variants={card_variants} | fields={variant_prices}"
                                 )
                     except Exception as exc:
                         logger.warning("Primary error itemId=%s id=%s: %s", item_id, primary_id, exc)
