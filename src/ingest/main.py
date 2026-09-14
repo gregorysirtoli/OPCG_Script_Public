@@ -366,6 +366,8 @@ def main() -> int:
                                     "itemId": item_id,
                                     "cardTraderId": card_trader_id,
                                     "language": language,
+                                    "variant": card_variant,
+                                    "variants": card_variants,
                                     "eur_usd": fx,
                                 }
                             )

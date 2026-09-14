@@ -170,6 +170,7 @@ def main() -> int:
     projection = {
         "_id": 1,
         item_id_field: 1,
+        "variant": 1,
         "variants": 1,
         "name": 1,
         "localId": 1,
@@ -382,6 +383,8 @@ def main() -> int:
                                     "itemId": item_id,
                                     "cardTraderId": card_trader_id,
                                     "language": language,
+                                    "variant": card_variant,
+                                    "variants": card_variants,
                                     "eur_usd": fx,
                                 }
                             )
