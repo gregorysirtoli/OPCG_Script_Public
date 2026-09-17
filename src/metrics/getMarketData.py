@@ -356,18 +356,18 @@ def _compute_price_confidence_score(
     if price_primary is not None or price_trend is not None:
         score += 0.30
     if price_secondary is not None:
-        score += 0.15
+        score += 0.30
     if price_tertiary is not None:
-        score += 0.20
+        score += 0.30
+    if price_pricecharting is not None:
+        score += 0.25
     if price_cardtrader is not None:
         score += 0.15
-    if price_pricecharting is not None:
-        score += 0.15
     if price_7d is not None:
-        score += 0.025
+        score += 0.10
     if price_30d is not None:
-        score += 0.025
-    return _round2(min(1.0, score)) if score > 0 else None
+        score += 0.10
+    return _round2(score) if score > 0 else None
 
 
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
