@@ -3,7 +3,7 @@ name: Pokemon - Run MarketData
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Pokemon - Run Prices"]
+    workflows: ["Pokemon - Prices"]
     types:
       - completed
 
