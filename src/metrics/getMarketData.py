@@ -354,11 +354,11 @@ def _compute_price_confidence_score(
 
     score = 0.0
     if price_primary is not None or price_trend is not None:
-        score += 0.30
+        score += 0.50
     if price_secondary is not None:
-        score += 0.30
+        score += 0.25
     if price_tertiary is not None:
-        score += 0.30
+        score += 0.35
     if price_pricecharting is not None:
         score += 0.25
     if price_cardtrader is not None:
