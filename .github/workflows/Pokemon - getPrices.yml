@@ -3,8 +3,8 @@ name: Pokemon - Run Prices
 on:
   workflow_dispatch: # manual trigger
   schedule:
-      - cron: "0 15 */2 * *"
-      timezone: "Europe/Rome"
+    - cron: "0 15 */2 * *"
+    timezone: "Europe/Rome"
 
 
 jobs:
