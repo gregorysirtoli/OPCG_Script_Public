@@ -1,4 +1,4 @@
-﻿name: Run Prediction Daily (One Piece)
+﻿name: One Piece - Prediction Daily
 
 on:
   workflow_dispatch:

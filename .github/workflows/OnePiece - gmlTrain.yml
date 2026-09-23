@@ -1,4 +1,4 @@
-﻿name: Run Prediction Training (One Piece)
+﻿name: One Piece - Prediction Training
 
 on:
   workflow_dispatch:
