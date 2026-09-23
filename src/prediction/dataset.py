@@ -5,14 +5,29 @@ import pandas as pd
 from datetime import timezone
 
 from .features import safe_div
+from .attributes import flatten_dynamic_attributes
 
 
-def prep_cards(cards: pd.DataFrame, asof: pd.Timestamp, sets: pd.DataFrame | None = None) -> pd.DataFrame:
+def prep_cards(
+    cards: pd.DataFrame,
+    asof: pd.Timestamp,
+    sets: pd.DataFrame | None = None,
+    dynamic_cat_keys: list[str] = (),
+    dynamic_num_keys: list[str] = (),
+) -> pd.DataFrame:
     """
     Normalizza i campi Cards e aggiunge feature statiche per clustering/modello.
     Se releaseDate manca, usa quello della collection Sets tramite setId.
+    Gli attributi custom (dynamic_cat_keys/dynamic_num_keys, risolti tramite l'anagrafica
+    CardsCustomAttributes) vengono materializzati come colonne attr_<key>.
     """
     df = cards.copy()
+
+    # Alcune carte/giochi non hanno affatto certi campi: garantisce che esistano come
+    # colonne (Series) e non come default scalare di DataFrame.get, che romperebbe .fillna().
+    for col in ["id", "rarityName", "rarityId", "illustrator", "setId", "setName", "releaseDate", "customAttributes"]:
+        if col not in df.columns:
+            df[col] = None
 
     sets_release = {}
     sets_name = {}
@@ -21,35 +36,13 @@ def prep_cards(cards: pd.DataFrame, asof: pd.Timestamp, sets: pd.DataFrame | Non
         if "name" in sets.columns:
             sets_name = sets.set_index("id")["name"].to_dict()
 
-    def first_or_empty(x):
-        if isinstance(x, list):
-            return x[0] if x else ""
-        return x if x is not None else ""
-
-    def list_to_key(x):
-        if isinstance(x, list):
-            vals = [str(v).strip() for v in x if v]
-            return "|".join(sorted(set(vals)))
-        return str(x).strip() if x is not None else ""
-
-    df["id"] = df.get("id")
-    df["rarityName"] = df.get("rarityName", "").fillna("")
-    df["rarityId"] = df.get("rarityId", "").fillna("")
-    df["printing"] = df.get("printing", "").fillna("")
-    df["setId"] = df.get("setId", "").fillna("")
-    df["setName"] = df.get("setName", "").fillna("").replace("", None)
-    df["illustrator"] = df.get("illustrator", "").fillna("")
-    df["cardType"] = df.get("cardType", "").apply(first_or_empty).fillna("")
-    df["subTypes"] = df.get("subTypes", "").apply(list_to_key)
-    df["attribute"] = df.get("attribute", "").apply(list_to_key)
-    df["alternate"] = pd.to_numeric(df.get("alternate"), errors="coerce").fillna(0).astype(int)
-    df["cost"] = pd.to_numeric(df.get("cost"), errors="coerce").fillna(0)
-    df["power"] = pd.to_numeric(df.get("power"), errors="coerce").fillna(0)
-
-    df["color_1"] = df.get("color", "").apply(first_or_empty)
+    df["rarityName"] = df["rarityName"].fillna("")
+    df["rarityId"] = df["rarityId"].fillna("")
+    df["illustrator"] = df["illustrator"].fillna("")
+    df["setId"] = df["setId"].fillna("")
     df["setName"] = df["setName"].fillna(df["setId"].map(sets_name)).fillna("")
 
-    rd_cards = pd.to_datetime(df.get("releaseDate", pd.NaT), errors="coerce", utc=True)
+    rd_cards = pd.to_datetime(df["releaseDate"], errors="coerce", utc=True)
     rd_sets = df["setId"].map(sets_release)
     rd = rd_cards.fillna(rd_sets)
 
@@ -58,10 +51,15 @@ def prep_cards(cards: pd.DataFrame, asof: pd.Timestamp, sets: pd.DataFrame | Non
     age_days = (asof.tz_convert("UTC") - rd).dt.days
     df["card_age_weeks"] = (age_days / 7.0).clip(lower=0).fillna(0)
 
+    df = flatten_dynamic_attributes(df, list(dynamic_cat_keys), list(dynamic_num_keys))
+
     return df
 
 
 def prep_prices_daily(prices: pd.DataFrame) -> pd.DataFrame:
+    if prices.empty:
+        return pd.DataFrame(columns=["itemId", "date", "price", "sellers", "listings", "spread"])
+
     df = prices.copy()
     df["createdAt"] = pd.to_datetime(df["createdAt"], errors="coerce", utc=True)
     df = df.dropna(subset=["itemId", "createdAt"])

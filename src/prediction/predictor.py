@@ -13,6 +13,7 @@ from .dataset import (
 from .features import assign_tier
 from .clustering import predict_clusters
 from .modeling import predict_tier_models
+from .attributes import build_feature_cols
 
 
 def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConfig(), ml: MLConfig = MLConfig()):
@@ -29,6 +30,9 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     cluster_pipe = artifacts["cluster_pipe"]
     cat_cols = artifacts["cat_cols"]
     num_cols = artifacts["num_cols"]
+    dyn_cat_keys = artifacts.get("dynamic_attr_cat_keys", [])
+    dyn_num_keys = artifacts.get("dynamic_attr_num_keys", [])
+    cat_cols_static, static_num_cols, cluster_cols = build_feature_cols(dyn_cat_keys, dyn_num_keys)
 
     asof = pd.Timestamp(datetime.now(timezone.utc))
 
@@ -36,7 +40,7 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     sets = load_collection(db, getattr(mongo, "col_sets", "Sets"))
     prices = load_collection(db, mongo.col_prices)
 
-    cards_p = prep_cards(cards, asof, sets)
+    cards_p = prep_cards(cards, asof, sets, dynamic_cat_keys=dyn_cat_keys, dynamic_num_keys=dyn_num_keys)
 
     daily = prep_prices_daily(prices)
     daily = reindex_daily_fill(daily, max_ffill_days=ml_artifact.max_ffill_days)
@@ -52,12 +56,7 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
 
     latest = feat.sort_values(["itemId", "date"]).groupby("itemId", as_index=False).tail(1)
     latest = latest.merge(
-        cards_p[[
-            "id", "rarityName", "rarityId", "printing", "color_1",
-            "setId", "setName", "illustrator", "cardType",
-            "subTypes", "attribute",
-            "alternate", "cost", "power", "card_age_weeks"
-        ]],
+        cards_p[["id", *cluster_cols]],
         left_on="itemId",
         right_on="id",
         how="left"
@@ -65,12 +64,9 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
 
     latest["clusterId"] = predict_clusters(
         cluster_pipe,
-        latest[[
-            "rarityName", "rarityId", "printing", "color_1",
-            "setId", "setName", "illustrator", "cardType",
-            "subTypes", "attribute",
-            "alternate", "cost", "power", "card_age_weeks"
-        ]].copy()
+        latest[cluster_cols].copy(),
+        cat_cols=cat_cols_static,
+        num_cols=static_num_cols,
     ).values
 
     latest["tier"] = latest["price"].apply(

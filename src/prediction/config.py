@@ -1,6 +1,11 @@
 """
 INPUT (MongoDB esistente)
-- Cards: dati statici carta (id, name, rarityName, printing, alternate, color, setId, releaseDate, ...)
+- Cards: dati statici carta (id, name, rarityName, rarityId, illustrator, setId, releaseDate, ...)
+  + customAttributes: dict dinamico di attributi specifici per gioco/carta (es. color, cardType,
+    subtypes, power, hp, stage, ...), le cui chiavi variano da un gioco all'altro.
+- CardsCustomAttributes: anagrafica degli attributeKey tracciati, con i valori distinti osservati
+  ({attributeKey, values}); usata per decidere dinamicamente quali customAttributes.* usare come
+  feature categoriali/numeriche invece di elencarli a mano.
 - Prices: storico prezzi giornaliero (itemId, createdAt, pricePrimary, sellers, listings, ...)
 
 OBIETTIVO
@@ -61,6 +66,7 @@ class MongoConfig:
     uri: str = os.environ["MONGODB_URI"]
     db_name: str = os.environ["MONGODB_DB"]
     col_cards: str = "Cards"
+    col_cards_custom_attrs: str = "CardsCustomAttributes"
     col_prices: str = "Prices"
     col_sets: str = "Sets"
     col_pred: str = "ml_predictions_daily"
@@ -74,6 +80,7 @@ class MLConfig:
     min_history_days: int = 84
     n_clusters: int = 30
     max_ffill_days: int = 7
+    max_attribute_cardinality: int = 1000
 
     low_min: float = 1.0
     low_max: float = 15.0

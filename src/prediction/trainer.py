@@ -15,6 +15,7 @@ from .dataset import (
 from .clustering import fit_clusters
 from .features import assign_tier
 from .modeling import fit_tier_models, TierModels
+from .attributes import load_attribute_registry, resolve_dynamic_attributes, build_feature_cols
 
 
 def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConfig(), ml: MLConfig = MLConfig()):
@@ -38,18 +39,11 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
             "id": 1,
             "rarityName": 1,
             "rarityId": 1,
-            "printing": 1,
-            "color": 1,
-            "setId": 1,
-            "setName": 1,
             "illustrator": 1,
-            "cardType": 1,
-            "subTypes": 1,
-            "attribute": 1,
-            "alternate": 1,
-            "cost": 1,
-            "power": 1,
+            "setId": 1,
             "releaseDate": 1,
+            "variant": 1,
+            "customAttributes": 1,
         },
     )
     sets = load_collection(
@@ -81,7 +75,18 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
     )
     log_step(f"load cards={len(cards):,} sets={len(sets):,} prices={len(prices):,} (from {date_from.date()} to {asof.date()})")
 
-    cards_p = prep_cards(cards, asof, sets)
+    if prices.empty:
+        raise RuntimeError(
+            f"Nessun documento trovato in '{mongo.col_prices}' per il periodo "
+            f"{date_from.date()} - {asof.date()}: impossibile addestrare senza storico prezzi. "
+            "Verifica che la pipeline di ingest prezzi sia attiva/popolata."
+        )
+
+    registry = load_attribute_registry(db, mongo.col_cards_custom_attrs)
+    dyn_cat_keys, dyn_num_keys = resolve_dynamic_attributes(registry, cards, max_categories=ml.max_attribute_cardinality)
+    log_step(f"resolved dynamic attributes: cat={dyn_cat_keys} num={dyn_num_keys}")
+
+    cards_p = prep_cards(cards, asof, sets, dynamic_cat_keys=dyn_cat_keys, dynamic_num_keys=dyn_num_keys)
     log_step("prep_cards done")
     daily = prep_prices_daily(prices)
     log_step(f"prep_prices_daily rows={len(daily):,}")
@@ -105,27 +110,20 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
     train_df = train_df.dropna(subset=["future_ret_28d"])
     log_step(f"clean inf/NaN rows={len(train_df):,}")
 
+    cat_cols, static_num_cols, cluster_cols = build_feature_cols(dyn_cat_keys, dyn_num_keys)
+
     train_df = train_df.merge(
-        cards_p[[
-            "id", "rarityName", "rarityId", "printing", "color_1",
-            "setId", "setName", "illustrator", "cardType",
-            "subTypes", "attribute",
-            "alternate", "cost", "power", "card_age_weeks"
-        ]],
+        cards_p[["id", *cluster_cols]],
         left_on="itemId",
         right_on="id",
         how="left"
     ).dropna(subset=["id"])
     log_step(f"merge cards rows={len(train_df):,}")
 
-    cluster_cols = [
-        "rarityName", "rarityId", "printing", "color_1",
-        "setId", "setName", "illustrator", "cardType",
-        "subTypes", "attribute",
-        "alternate", "cost", "power", "card_age_weeks"
-    ]
     cluster_source = cards_p[["id", *cluster_cols]].dropna(subset=["id"]).drop_duplicates(subset=["id"]).copy()
-    cluster_pipe, cluster_ids = fit_clusters(cluster_source[cluster_cols].copy(), n_clusters=ml.n_clusters)
+    cluster_pipe, cluster_ids = fit_clusters(
+        cluster_source[cluster_cols].copy(), cat_cols=cat_cols, num_cols=static_num_cols, n_clusters=ml.n_clusters
+    )
     cluster_source["clusterId"] = cluster_ids.values
     cluster_map = cluster_source.set_index("id")["clusterId"]
     train_df["clusterId"] = train_df["id"].map(cluster_map)
@@ -142,18 +140,13 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
         )
     )
 
-    cat_cols = [
-        "rarityName", "rarityId", "printing", "color_1",
-        "setId", "setName", "illustrator", "cardType",
-        "subTypes", "attribute"
-    ]
     num_cols = [
         "log_price",
         "ret_7d", "ret_14d", "ret_28d", "ret_56d",
         "vol_28d", "mom_14d",
         "sellers_chg_28d", "listings_chg_28d",
         "price_to_listings", "sellers_to_listings",
-        "alternate", "cost", "power", "card_age_weeks", "clusterId",
+        *static_num_cols, "clusterId",
         "spread", "liq_index", "shock",
         "days_since_observed", "is_observed",
         "ret_56d_missing", "vol_28d_missing", "mom_14d_missing", "liq_missing"
@@ -181,6 +174,8 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
         "mongo_config": mongo,
         "cat_cols": cat_cols,
         "num_cols": num_cols,
+        "dynamic_attr_cat_keys": dyn_cat_keys,
+        "dynamic_attr_num_keys": dyn_num_keys,
         "tier_models": tier_models,
         "cluster_pipe": cluster_pipe,
     }
