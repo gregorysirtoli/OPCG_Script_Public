@@ -1,9 +1,9 @@
-name: Dragon Ball - MarketData
+name: Yugioh - MarketData
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Dragon Ball - Prices"]
+    workflows: ["Yugioh - Prices"]
     types:
       - completed
 
@@ -14,15 +14,15 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: 1
-      MONGODB_URI: ${{ secrets.MONGODB_URI_DRAGONBALL }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB_DRAGONBALL }}
-      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI }}
-      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_YUGIOH }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_YUGIOH }}
+      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI_YUGIOH }}
+      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB_YUGIOH }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
-      GAME: "DRAGON BALL"
+      GAME: "YUGIOH"
 
     steps:
       - uses: actions/checkout@v4
