@@ -1,9 +1,9 @@
-name: Lorcana - Run MarketData
+name: Lorcana - MarketData
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Lorcana - Run Prices"]
+    workflows: ["Lorcana - Prices"]
     types:
       - completed
 
