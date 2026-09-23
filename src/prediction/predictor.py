@@ -46,6 +46,13 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     daily = reindex_daily_fill(daily, max_ffill_days=ml_artifact.max_ffill_days)
     daily = filter_min_history(daily, ml_artifact.min_history_days)
 
+    if daily.empty:
+        print(
+            f"Nessuna carta ha almeno {ml_artifact.min_history_days} giorni di storico prezzi: "
+            "predizione saltata."
+        )
+        return
+
     win_ret = {
         "7d": ml_artifact.win_ret_1,
         "14d": ml_artifact.win_ret_2,
@@ -61,6 +68,10 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
         right_on="id",
         how="left"
     ).dropna(subset=["id"])
+
+    if latest.empty:
+        print("Nessuna carta con storico prezzi e anagrafica corrispondenti: predizione saltata.")
+        return
 
     latest["clusterId"] = predict_clusters(
         cluster_pipe,

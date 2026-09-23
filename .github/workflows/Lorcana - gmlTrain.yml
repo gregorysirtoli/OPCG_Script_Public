@@ -27,9 +27,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: artifacts
-          key: optcg-artifacts-${{ github.run_id }}
+          key: optcg-artifacts-lorcana-${{ github.run_id }}
           restore-keys: |
-            optcg-artifacts-
+            optcg-artifacts-lorcana-
 
       - name: Setup Python
         uses: actions/setup-python@v5

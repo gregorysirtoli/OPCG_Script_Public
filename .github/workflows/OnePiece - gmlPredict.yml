@@ -28,9 +28,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: artifacts
-          key: optcg-artifacts-${{ github.run_id }}
+          key: optcg-artifacts-onepiece-${{ github.run_id }}
           restore-keys: |
-            optcg-artifacts-
+            optcg-artifacts-onepiece-
 
       - name: Ensure model artifacts exist
         run: |
