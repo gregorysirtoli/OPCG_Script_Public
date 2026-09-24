@@ -3,6 +3,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import exp, log1p, sqrt, tanh
+from statistics import median
 from typing import Any, Dict, List, Optional, Tuple
 
 from pymongo import InsertOne, UpdateOne
@@ -381,7 +382,7 @@ def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
         _to_positive_number((doc or {}).get("priceCardTrader")),
     ]
     redline_values = [value for value in redline_values if value is not None]
-    return _round2(sum(redline_values) / len(redline_values)) if redline_values else None
+    return _round2(median(redline_values)) if redline_values else None
 
 
 def _safe_round2(n: float) -> float:
@@ -542,22 +543,9 @@ def _calc_pct_change(now: Optional[float], base: Optional[float]) -> Optional[fl
         return None
     return _round2(((now - base) / base) * 100.0)
 
-def _best_usd(doc: Dict[str, Any]) -> Optional[float]:
-    if not doc:  # None or {}
-        return None
-     
-    # All prices in USD. If no pricePrimary, use priority fallback.
-    for k in ("cmPriceTrend", "priceYuyuTei", "priceUngraded", "pricePriceCharting",
-              "cmPriceLow", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d", "priceCardTrader"):
-        v = _to_positive_number(doc.get(k))
-        if v is not None:
-            return v
-    return None
-
 @dataclass
 class SeriesInfo:
     price_now_usd: Optional[float] # USD
-    used_primary: bool # true if pricePrimary
 
 @dataclass
 class Baselines:
@@ -609,29 +597,9 @@ def _get_closest_at_or_before(
     return best_doc
 
 def _pick_series_now(latest: Optional[Dict[str, Any]]) -> SeriesInfo:
-    doc = latest or {}
-
-    # 1) prefer cmPriceTrend
-    trend = _to_positive_number(doc.get("cmPriceTrend"))
-    if trend is not None:
-        return SeriesInfo(price_now_usd=trend, used_primary=True)
-
-    # 2) fallback pricePrimary
-    p_primary = _to_positive_number(doc.get("pricePrimary"))
-    if p_primary is not None:
-        return SeriesInfo(price_now_usd=p_primary, used_primary=True)
-
-    # 3) fallback price third provider
-    p_tertiary = _to_positive_number(doc.get("priceYuyuTei"))
-    if p_tertiary is not None:
-        return SeriesInfo(price_now_usd=p_tertiary, used_primary=False)
-
-    # 4) fallback cascade
-    p_fallback = _best_usd(doc)
-    return SeriesInfo(price_now_usd=p_fallback, used_primary=False)
+    return SeriesInfo(price_now_usd=_compute_price_redline(latest))
 
 def _pick_baselines(
-    used_primary: bool,
     b1doc: Optional[Dict[str, Any]],
     b7doc: Optional[Dict[str, Any]],
     b30doc: Optional[Dict[str, Any]],
@@ -639,23 +607,13 @@ def _pick_baselines(
     b180doc: Optional[Dict[str, Any]],
     b365doc: Optional[Dict[str, Any]],
 ) -> Baselines:
-    if used_primary:
-        def getter(d: Optional[Dict[str, Any]]) -> Optional[float]:
-            dd = d or {}
-            v = _to_positive_number(dd.get("cmPriceTrend"))
-            if v is not None:
-                return v
-            return _to_positive_number(dd.get("pricePrimary"))
-    else:
-        getter = lambda d: _best_usd(d or {})
-
     return Baselines(
-        b1=getter(b1doc),
-        b7=getter(b7doc),
-        b30=getter(b30doc),
-        b90=getter(b90doc),
-        b180=getter(b180doc),
-        b365=getter(b365doc),
+        b1=_compute_price_redline(b1doc),
+        b7=_compute_price_redline(b7doc),
+        b30=_compute_price_redline(b30doc),
+        b90=_compute_price_redline(b90doc),
+        b180=_compute_price_redline(b180doc),
+        b365=_compute_price_redline(b365doc),
     )
 
 def _parse_created_at(doc: Dict[str, Any]) -> Optional[datetime]:
@@ -676,24 +634,7 @@ def _as_number_or_none(v: Any) -> Optional[float]:
 
 
 def _effective_price_from_snapshot(doc: Optional[Dict[str, Any]]) -> Optional[float]:
-    if not doc:
-        return None
-    primary = _to_positive_number(doc.get("pricePrimary"))
-    if primary is not None:
-        return _safe_round2(primary)
-    trend = _to_positive_number(doc.get("cmPriceTrend"))
-    if trend is not None:
-        return _safe_round2(trend)
-    tertiary = _to_positive_number(doc.get("priceYuyuTei"))
-    if tertiary is not None:
-        return _safe_round2(tertiary)
-    low = _to_positive_number(doc.get("cmPriceLow"))
-    if low is not None:
-        return _safe_round2(low)
-    cardtrader = _to_positive_number(doc.get("priceCardTrader"))
-    if cardtrader is not None:
-        return _safe_round2(cardtrader)
-    return None
+    return _compute_price_redline(doc)
 
 
 def _extract_latest_and_previous_numeric(
@@ -1111,7 +1052,7 @@ def compute_market_data_for_item(
     b90doc = _get_closest_around(prices, now - timedelta(days=90), max_days=14)
     b180doc = _get_closest_around(prices, now - timedelta(days=180), max_days=56)
     b365doc = _get_closest_around(prices, now - timedelta(days=365), max_days=112)
-    baselines = _pick_baselines(s.used_primary, b1doc, b7doc, b30doc,  b90doc, b180doc, b365doc)
+    baselines = _pick_baselines(b1doc, b7doc, b30doc, b90doc, b180doc, b365doc)
 
     # Prices reference
     price_1d   = _as_number_or_none(baselines.b1)
