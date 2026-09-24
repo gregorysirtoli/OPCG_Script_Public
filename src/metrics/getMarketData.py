@@ -1295,10 +1295,14 @@ def compute_market_data_for_item(
         near_ath=price_position.get("nearAth"),
     )
     avg_gain_4w_pct = _compute_avg_gain_window_pct(prices, window_days=28)
+    avg_gain_8w_pct = _compute_avg_gain_window_pct(prices, window_days=56)
     if buy_tier is not None:
         buy_tier_proof = buy_tier.get("proof") if isinstance(buy_tier.get("proof"), dict) else {}
         buy_tier_proof["avgGain4wPct"] = avg_gain_4w_pct
         buy_tier["proof"] = buy_tier_proof
+    if isinstance(price_band.get("proof"), dict):
+        price_band["proof"]["avgGain4wPct"] = avg_gain_4w_pct
+        price_band["proof"]["avgGain8wPct"] = avg_gain_8w_pct
 
     stamp = _classify_stamp(
         price_band_key=price_band.get("key", "UNKNOWN"),
