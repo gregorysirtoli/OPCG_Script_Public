@@ -1,4 +1,4 @@
-name: Run Sales Volume (One Piece)
+name: One Piece - Sales Volume
 
 on:
   workflow_dispatch: # manual trigger

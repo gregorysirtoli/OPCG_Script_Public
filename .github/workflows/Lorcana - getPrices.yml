@@ -3,7 +3,7 @@ name: Lorcana - Prices
 on:
   workflow_dispatch: # manual trigger
   schedule:
-    - cron: "11 3 * * *" # UTC -> CEST (UTC+2) ~= 05:11 in Europe/Rome (CEST)
+    - cron: "11 5 * * *" # UTC -> CEST (UTC+2) ~= 07:11 in Europe/Rome (CEST)
 
 jobs:
   run-batches:

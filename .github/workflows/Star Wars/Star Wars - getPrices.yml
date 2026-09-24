@@ -3,7 +3,7 @@ name: Star Wars - Run Prices
 on:
   workflow_dispatch: # manual trigger
   schedule:
-    - cron: "12 3 * * *" # UTC -> CEST (UTC+2) ~= 05:12 in Europe/Rome (CEST)
+    - cron: "12 2 * * *" # UTC -> CEST (UTC+2) ~= 04:12 in Europe/Rome (CEST)
 
 jobs:
   run-batches:

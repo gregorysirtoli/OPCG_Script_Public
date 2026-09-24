@@ -1,4 +1,4 @@
-name: Run Blog
+name: One Piece - Blog
 
 on:
   workflow_dispatch:

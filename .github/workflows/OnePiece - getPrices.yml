@@ -1,4 +1,4 @@
-name: Run Prices (One Piece)
+name: One Piece - Prices
 
 on:
   workflow_dispatch: # manual trigger

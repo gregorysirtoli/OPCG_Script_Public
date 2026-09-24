@@ -1,9 +1,9 @@
-name: Run Tierlist (One Piece)
+name: One Piece - Tierlist
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run MarketData (One Piece)"]
+    workflows: ["One Piece - MarketData"]
     types:
       - completed
 

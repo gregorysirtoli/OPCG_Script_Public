@@ -1,9 +1,9 @@
-name: Run Prices (One Piece) (Retry)
+name: One Piece - Prices (Retry)
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run Prices (One Piece)"]
+    workflows: ["One Piece - Prices"]
     types:
       - completed
 

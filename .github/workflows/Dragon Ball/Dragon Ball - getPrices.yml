@@ -3,7 +3,7 @@ name: Dragon Ball - Prices
 on:
   workflow_dispatch: # manual trigger
   schedule:
-    - cron: "27 3 * * *" # UTC -> CEST (UTC+2) ~= 05:27 in Europe/Rome (CEST)
+    - cron: "27 9 * * *" # UTC -> CEST (UTC+2) ~= 11:27 in Europe/Rome (CEST)
 
 jobs:
   run-batches:

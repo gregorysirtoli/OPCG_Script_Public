@@ -1,9 +1,9 @@
-name: Run MarketData (One Piece)
+name: One Piece - MarketData
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Run Prices (One Piece) (Retry)"]
+    workflows: ["One Piece - Prices (Retry)"]
     types:
       - completed
 
