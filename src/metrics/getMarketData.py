@@ -1044,15 +1044,25 @@ def compute_market_data_for_item(
     # Current series (USD)
     s = _pick_series_now(latest)
 
-    # Baselines (USD)
-    now = datetime.now(timezone.utc)
+    # Baselines (USD): ancorati alla data dell'ultima osservazione disponibile, non al
+    # wall-clock reale. Altrimenti un ingest in orario insolito (es. un retry job che
+    # gira più tardi del solito) può far combaciare "adesso" e "N giorni fa" sullo
+    # stesso documento, azzerando percentageChange1d/7d/... senza che il prezzo sia
+    # davvero rimasto invariato.
+    now = _parse_created_at(latest) if latest else None
+    if now is None:
+        now = datetime.now(timezone.utc)
     b1doc = _get_closest_around(prices, now - timedelta(days=1), max_days=1.75)
     b7doc = _get_closest_around(prices, now - timedelta(days=7), max_days=3.5)
+    b14doc = _get_closest_around(prices, now - timedelta(days=14), max_days=5)
     b30doc = _get_closest_around(prices, now - timedelta(days=30), max_days=7)
+    b60doc = _get_closest_around(prices, now - timedelta(days=60), max_days=10)
     b90doc = _get_closest_around(prices, now - timedelta(days=90), max_days=14)
     b180doc = _get_closest_around(prices, now - timedelta(days=180), max_days=56)
     b365doc = _get_closest_around(prices, now - timedelta(days=365), max_days=112)
     baselines = _pick_baselines(b1doc, b7doc, b30doc, b90doc, b180doc, b365doc)
+    price_14d_redline = _compute_price_redline(b14doc)
+    price_60d_redline = _compute_price_redline(b60doc)
 
     # Prices reference
     price_1d   = _as_number_or_none(baselines.b1)
@@ -1082,6 +1092,15 @@ def compute_market_data_for_item(
     pct90  = _calc_pct_change(s.price_now_usd, baselines.b90)
     pct180 = _calc_pct_change(s.price_now_usd, baselines.b180)
     pct365 = _calc_pct_change(s.price_now_usd, baselines.b365)
+
+    # Momentum come accelerazione: differenza tra il rendimento della finestra corrente
+    # e quello della finestra immediatamente precedente. Positivo = il trend si sta
+    # rafforzando, negativo = si sta indebolendo/invertendo (utile per distinguere un
+    # rialzo che accelera da una bolla che si sta sgonfiando).
+    pct7_prior = _calc_pct_change(price_7d, price_14d_redline)
+    pct30_prior = _calc_pct_change(price_30d, price_60d_redline)
+    momentum_7d = _round2(pct7 - pct7_prior) if pct7 is not None and pct7_prior is not None else None
+    momentum_30d = _round2(pct30 - pct30_prior) if pct30 is not None and pct30_prior is not None else None
 
     # sellers & listings from doc (latest)
     cm_sellers = _to_number((latest or {}).get("sellers"))
@@ -1335,6 +1354,8 @@ def compute_market_data_for_item(
         "liquidityScore": liquidity_score, # 0..100
         "momentumWeighted": momentum_weighted_pct, # %
         "momentumScore": momentum_score, # 0..100
+        "momentum7d": momentum_7d, # punti %, accelerazione: pct7 - pct7 della settimana precedente
+        "momentum30d": momentum_30d, # punti %, accelerazione: pct30 - pct30 del mese precedente
         "gradingAttractivenessScore": grading_attractiveness_score, # 0..100
         "priceConfidenceScore": _compute_price_confidence_score(
             price_primary=_as_number_or_none((latest or {}).get("pricePrimary")),
