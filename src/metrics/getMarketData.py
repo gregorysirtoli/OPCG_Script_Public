@@ -875,6 +875,51 @@ def _compute_avg_gain_window_pct(
     return _round2(_mean(pct_changes))
 
 
+def _compute_sales_estimate(
+    prices: List[Dict[str, Any]],
+    now: datetime,
+    window_days: int,
+) -> Optional[int]:
+    """
+    STIMA (non un conteggio reale di transazioni) delle unita' vendute negli ultimi
+    `window_days`, sommando giorno per giorno il calo dei listing: un calo tra un
+    giorno e il successivo viene trattato come "venduto", un aumento come 0. Stessa
+    euristica gia' usata per il totale di catalogo in getSalesVolume.py e per gli
+    Sets in _build_set_market_history_snapshot, qui applicata a una singola carta.
+    Nessuna scalatura (SALES_SCALING_FACTOR) applicata: e' il conteggio grezzo delle
+    unita' "sparite" dai listing osservati, non calibrato contro vendite reali.
+    Ritorna None se non ci sono abbastanza dati sui listing per stimare nulla.
+    """
+    if window_days <= 0 or not prices:
+        return None
+
+    day_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    cursor_day = day_end - timedelta(days=window_days - 1)
+
+    total_units = 0.0
+    has_listing_data = False
+
+    while cursor_day <= day_end:
+        prev_day_end = cursor_day - timedelta(days=1)
+        snap_today = _get_closest_at_or_before(prices, cursor_day)
+        snap_prev = _get_closest_at_or_before(prices, prev_day_end)
+
+        listings_today = _snapshot_total_listings(snap_today)
+        listings_prev = _snapshot_total_listings(snap_prev)
+
+        if listings_today is not None or listings_prev is not None:
+            has_listing_data = True
+
+        if listings_today is not None and listings_prev is not None:
+            total_units += max(0.0, listings_prev - listings_today)
+
+        cursor_day += timedelta(days=1)
+
+    if not has_listing_data:
+        return None
+    return int(round(total_units))
+
+
 def _classify_buy_tier(
     set_id: Optional[str],
     price_band_key: str,
@@ -1264,6 +1309,9 @@ def compute_market_data_for_item(
         price_band["proof"]["avgGain4wPct"] = avg_gain_4w_pct
         price_band["proof"]["avgGain8wPct"] = avg_gain_8w_pct
 
+    sales_7d_estimate = _compute_sales_estimate(prices, now, window_days=7)
+    sales_30d_estimate = _compute_sales_estimate(prices, now, window_days=30)
+
     stamp = _classify_stamp(
         price_band_key=price_band.get("key", "UNKNOWN"),
         pct1=pct1,
@@ -1356,6 +1404,8 @@ def compute_market_data_for_item(
         "momentumScore": momentum_score, # 0..100
         "momentum7d": momentum_7d, # punti %, accelerazione: pct7 - pct7 della settimana precedente
         "momentum30d": momentum_30d, # punti %, accelerazione: pct30 - pct30 del mese precedente
+        "sales7d": sales_7d_estimate, # STIMA unita' vendute, da calo listing (non conteggio reale)
+        "sales30d": sales_30d_estimate, # STIMA unita' vendute, da calo listing (non conteggio reale)
         "gradingAttractivenessScore": grading_attractiveness_score, # 0..100
         "priceConfidenceScore": _compute_price_confidence_score(
             price_primary=_as_number_or_none((latest or {}).get("pricePrimary")),
