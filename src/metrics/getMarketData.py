@@ -2162,7 +2162,7 @@ def update_cards_market_data(
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
     coll_card_stamps = db[CARD_STAMPS_COLLECTION]
-    coll_card_stamp_changes = db[CARD_STAMP_CHANGES_COLLECTION]
+    coll_card_stamp_changes = _sales_db[CARD_STAMP_CHANGES_COLLECTION]
     coll_cards_grading_population = _sales_db["CardsGradingPopulation"]
 
     q_cards: Dict[str, Any] = {}
