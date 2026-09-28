@@ -1,4 +1,4 @@
-name: Cyberpunk - Run Prices
+name: Union Arena - Run Prices
 
 on:
   workflow_dispatch: # manual trigger
@@ -11,17 +11,17 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: 1
-      MONGODB_URI: ${{ secrets.MONGODB_URI_CYBERPUNK }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB_CYBERPUNK }}
-      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI_CYBERPUNK }}
-      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB_CYBERPUNK }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_UNIONARENA }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_UNIONARENA }}
+      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI_UNIONARENA }}
+      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB_UNIONARENA }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       CARDTRADER_AUTH_TOKEN: ${{ secrets.CARDTRADER_AUTH_TOKEN }}
       MAIL_SUBJECT: ""
-      GAME: "CYBERPUNK"
+      GAME: "UNIONARENA"
 
       # Private providers
       PROVIDERS_MODULE: private_providers.bundle
@@ -40,8 +40,8 @@ jobs:
       SECONDARY_SELECTORS: ${{ secrets.SECONDARY_SELECTORS }}
 
       # === CM (RED04) ===
-      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_CYBERPUNK }}
-      CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL_CYBERPUNK }}
+      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_UNIONARENA }}
+      CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL}}
 
       # ===  FX ===
       FX_API_URL: ${{ secrets.FX_API_URL }}
