@@ -3,7 +3,7 @@ name: Cyberpunk - Run Prices
 on:
   workflow_dispatch: # manual trigger
   schedule:
-    - cron: "35 3 * * *" # UTC -> CEST (UTC+2) ~= 05:35 in Europe/Rome (CEST)
+    - cron: "17 20 * * *" # UTC -> CEST (UTC+2) ~= 22:17 in Europe/Rome (CEST)
 
 jobs:
   run-batches:
