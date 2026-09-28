@@ -24,6 +24,7 @@ from src.core.emailer import send_email
 from src.core.logging_setup import configure_logger
 from src.core.utils import TokenBucket, get_fx_eur_usd
 from src.metrics.getMarketData import _compute_price_redline
+from src.ingest.priceArchive import archive_old_prices
 logger = configure_logger()
 
 # =========================
@@ -103,6 +104,14 @@ def main() -> int:
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
     coll_logs = db.get_collection("Logs")
+
+    # ===== Archiviazione Prices (PRIMA dell'ingest) =====
+    if settings.mongodb_archive_uri and settings.mongodb_archive_db:
+        archive_client = MongoClient(settings.mongodb_archive_uri, tz_aware=True)
+        archive_db = archive_client[settings.mongodb_archive_db]
+    else:
+        archive_db = None
+    archive_old_prices(db, archive_db, logger)
 
     # ===== Providers (public/private) =====
     try:
