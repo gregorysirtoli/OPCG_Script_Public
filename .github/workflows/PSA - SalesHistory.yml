@@ -1,4 +1,4 @@
-name: One Piece - SalesHistory
+name: PSA - SalesHistory
 
 on:
   workflow_dispatch:
