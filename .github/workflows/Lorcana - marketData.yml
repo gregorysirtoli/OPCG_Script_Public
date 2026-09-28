@@ -36,3 +36,15 @@ jobs:
 
       - name: Run MarketData enrichment
         run: python -m src.ingest.marketData
+
+      - name: Run Sales Volume script
+        run: |
+          python -m src.metrics.getSalesVolume
+
+      - name: Run Tierlist script
+        run: |
+          python -m src.tierlist.getTierlist
+
+      - name: Run update score script
+        run: |
+          python -m src.metrics.updateScore
