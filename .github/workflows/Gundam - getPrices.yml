@@ -1,9 +1,9 @@
-name: Palworld - Run Prices
+name: Gundam - Run Prices
 
 on:
   workflow_dispatch: # manual trigger
   schedule:
-    - cron: "12 3 * * *" # UTC -> CEST (UTC+2) ~= 05:12 in Europe/Rome (CEST)
+    - cron: "17 18 * * *" # UTC -> CEST (UTC+2) ~= 20:17 in Europe/Rome (CEST)
 
 jobs:
   run-batches:
@@ -11,15 +11,17 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: 1
-      MONGODB_URI: ${{ secrets.MONGODB_URI_PALWORLD }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB_PALWORLD }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_GUNDAM }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_GUNDAM }}
+      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI_GUNDAM }}
+      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB_GUNDAM }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       CARDTRADER_AUTH_TOKEN: ${{ secrets.CARDTRADER_AUTH_TOKEN }}
       MAIL_SUBJECT: ""
-      GAME: "PALWORLD"
+      GAME: "GUNDAM"
 
       # Private providers
       PROVIDERS_MODULE: private_providers.bundle
@@ -38,7 +40,7 @@ jobs:
       SECONDARY_SELECTORS: ${{ secrets.SECONDARY_SELECTORS }}
 
       # === CM (RED04) ===
-      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_PALWORLD }}
+      CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_GUNDAM }}
       CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL }}
 
       # ===  FX ===
@@ -76,3 +78,18 @@ jobs:
 
       - name: Run shard
         run: python -m src.ingest.main --shard-index "0" --shard-total "1"
+
+      - name: Run MarketData enrichment
+        run: python -m src.ingest.marketData
+
+      - name: Run Sales Volume script
+        run: |
+          python -m src.metrics.getSalesVolume
+
+      - name: Run Tierlist script
+        run: |
+          python -m src.tierlist.getTierlist
+
+      - name: Run update score script
+        run: |
+          python -m src.metrics.updateScore

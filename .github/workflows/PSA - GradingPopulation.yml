@@ -1,4 +1,4 @@
-name: One Piece - GradingPopulation
+name: PSA - GradingPopulation
 
 on:
   workflow_dispatch:
