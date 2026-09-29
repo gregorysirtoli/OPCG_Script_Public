@@ -23,6 +23,7 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       GAME: "ONE PIECE"
+      PRIMARY_URL_TEMPLATE: ${{ secrets.PRIMARY_URL_TEMPLATE }}
 
     steps:
       - uses: actions/checkout@v4
