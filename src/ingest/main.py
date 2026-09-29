@@ -103,7 +103,6 @@ def main() -> int:
     db = client[settings.mongodb_db]
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
-    coll_logs = db.get_collection("Logs")
 
     # ===== Archiviazione Prices (PRIMA dell'ingest) =====
     if settings.mongodb_archive_uri and settings.mongodb_archive_db:
@@ -468,18 +467,6 @@ def main() -> int:
             lines.append(f"<b>priceChartingId:</b> {alert.get('priceChartingId') or '-'}")
             lines.append("<br><hr><br>")
         send_email("🚫 [1/5][WORKFLOW] PriceCharting URL issues detected", "<br>".join(lines))
-
-    # log su collection Logs
-    try:
-        coll_logs.insert_one(
-            {
-                "type": "Prices: Ingestor",
-                "description": f"Inserted: {inserted} / Scanned: {total}",
-                "createdAt": datetime.now(timezone.utc),
-            }
-        )
-    except Exception as e:
-        logger.warning("Unable to write Logs entry: %s", e)
 
     logger.info("=== End Ingestor ===")
     return 0

@@ -151,7 +151,6 @@ def main() -> int:
     db = client[settings.mongodb_db]
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
-    coll_logs = db.get_collection("Logs")
 
     logger.info("Loading providers module: %s", settings.providers_module or "src.providers.mock")
     providers = load_provider_module(settings.providers_module)
@@ -471,17 +470,6 @@ def main() -> int:
             lines.append(f"<b>priceChartingId:</b> {alert.get('priceChartingId') or '-'}")
             lines.append("<br><hr><br>")
         send_email("🚫 [1/5][WORKFLOW] Retry PriceCharting URL issues detected", "<br>".join(lines))
-
-    try:
-        coll_logs.insert_one(
-            {
-                "type": "Prices: Retry PriceCharting URI Errors Ingestor",
-                "description": summary,
-                "createdAt": datetime.now(timezone.utc),
-            }
-        )
-    except Exception as exc:
-        logger.warning("Unable to write Logs entry: %s", exc)
 
     logger.info("=== End Retry PriceCharting URI Errors Ingestor ===")
     return 0
