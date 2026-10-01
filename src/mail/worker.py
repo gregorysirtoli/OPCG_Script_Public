@@ -53,11 +53,11 @@ def get_smtp_connection():
 
 def send_html_email(smtp: smtplib.SMTP, to: str, subject: str, body: str):
     msg = MIMEMultipart("alternative")
-    msg["From"]    = MAIL_FROM
-    msg["To"]      = to
+    msg["From"] = MAIL_FROM
+    msg["To"] = to
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "html", "utf-8"))
-    smtp.sendmail(SMTP_USER, [to], msg.as_string())
+    smtp.sendmail(MAIL_FROM, [to], msg.as_string())
 
 
 def run():
