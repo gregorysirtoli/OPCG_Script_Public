@@ -1,4 +1,4 @@
-name: Run Queue Price Alert
+name: One Piece - Mail Alert
 
 on:
   schedule:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  price-alert:
+  mail-alert:
     runs-on: ubuntu-latest
     env:
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
