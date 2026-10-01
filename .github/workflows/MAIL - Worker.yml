@@ -13,6 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
 
+    env:
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      MONGODB_ACCOUNT_URI: ${{ secrets.MONGODB_ACCOUNT_URI }}
+      MONGODB_ACCOUNT_DB: ${{ secrets.MONGODB_ACCOUNT_DB }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_FROM: ${{ secrets.SMTP_FROM }}
+      MAIL_WORKER_BATCH: "10"
+      MAIL_WORKER_MAX_RETRIES: "5"
+      MAIL_LOCK_STALE_MINUTES: "15"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,18 +41,4 @@ jobs:
         run: pip install pymongo==4.* dnspython python-dotenv
 
       - name: Run mail worker
-        env:
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          MONGODB_DB: ${{ secrets.MONGODB_DB }}
-          MONGODB_ACCOUNT_URI: ${{ secrets.MONGODB_ACCOUNT_URI }}
-          MONGODB_ACCOUNT_DB: ${{ secrets.MONGODB_ACCOUNT_DB }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SMTP_FROM: ${{ secrets.SMTP_FROM }}
-          MAIL_WORKER_BATCH: "10"
-          MAIL_WORKER_MAX_RETRIES: "5"
-          MAIL_LOCK_STALE_MINUTES: "15"
-
         run: python src/mail/worker.py
