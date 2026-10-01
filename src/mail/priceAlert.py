@@ -97,8 +97,8 @@ def clean_card_name(card: dict) -> tuple[str, str, str]:
     return clean_name, local_id, card_name
 
 
-def unsubscribe_link(user_id, alert_id) -> str:
-    return f"https://redline.cards/api/alerts/unsubscribe?u={user_id}&_id={alert_id}"
+def unsubscribe_link(user_id, alert_id, item_id) -> str:
+    return f"https://redline.cards/api/alerts/unsubscribe?u={user_id}&_id={alert_id}&i={item_id}"
 
 
 def build_card_links(card: dict, clean_name: str, local_id: str) -> dict[str, str]:
@@ -231,6 +231,7 @@ def build_triggered_item(alert_doc: dict, now_utc: datetime) -> dict:
         "alert": alert_doc,
         "alertId": alert_doc["_id"],
         "userId": alert_doc.get("userId"),
+        "itemId": alert_doc.get("itemId"),
         "card": card,
         "cardName": card_name,
         "cleanName": clean_name,
@@ -263,7 +264,7 @@ def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
         f"you have set up an alert for the card {item['cardName']} on Red Line "
         "(https://redline.cards/).<br>"
         "If you wish to stop receiving alerts and notifications, you can "
-        f"<a href='{unsubscribe_link(item['userId'], item['alertId'])}'>unsubscribe</a> any time.<br>"
+        f"<a href='{unsubscribe_link(item['userId'], item['alertId'], item['itemId'])}'>unsubscribe</a> any time.<br>"
         "This is a free notification service of the Red Line website (https://redline.cards/).<br><br>"
         "______<br><br>"
         "<i>This e-mail may contain confidential and/or privileged information.<br>"
