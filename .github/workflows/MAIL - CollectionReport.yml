@@ -1,4 +1,4 @@
-name: Run Monthly Collection Report
+name: Mail - Monthly Collection Report
 
 on:
   schedule:
@@ -14,6 +14,8 @@ jobs:
       PYTHONUNBUFFERED: "1"
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
       MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      MONGODB_ACCOUNT_URI: ${{ secrets.MONGODB_ACCOUNT_URI }}
+      MONGODB_ACCOUNT_DB: ${{ secrets.MONGODB_ACCOUNT_DB }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
