@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 
 from src.core.notifications import enqueue_notification, ensure_notification_indexes
+from src.metrics.getMarketData import _compute_price_redline
 
 # =============================================================================
 # Environment & constants
@@ -29,16 +30,6 @@ CREDIT_COST = 10
 MAX_RANDOM_DELAY_HOURS = 12
 MAX_RANDOM_DELAY_MINUTES = MAX_RANDOM_DELAY_HOURS * 60
 MIN_DELTA_HOURS = MAX_RANDOM_DELAY_HOURS
-
-PRICE_FIELDS = (
-    "priceRedLine",
-    "pricePriceCharting",
-    "pricePrimary",
-    "cmAvg7d",
-    "cmPriceAvg",
-    "cmPriceTrend",
-    "priceCardTrader",
-)
 
 decimal.getcontext().prec = 10
 
@@ -106,6 +97,10 @@ def clean_card_name(card: dict) -> tuple[str, str, str]:
     return clean_name, local_id, card_name
 
 
+def unsubscribe_link(user_id, alert_id) -> str:
+    return f"https://redline.cards/api/alerts/unsubscribe?u={user_id}&_id={alert_id}"
+
+
 def build_card_links(card: dict, clean_name: str, local_id: str) -> dict[str, str]:
     encoded_query = quote_plus(f"{clean_name} {local_id}".strip())
     ebay_query = quote_plus(f"{clean_name} {local_id}".strip())
@@ -132,18 +127,14 @@ def build_card_links(card: dict, clean_name: str, local_id: str) -> dict[str, st
 # Alert evaluation
 # =============================================================================
 
-def build_price_candidates(price_doc: dict) -> list[tuple[str, decimal.Decimal]]:
-    candidates: list[tuple[str, decimal.Decimal]] = []
-
-    for field in PRICE_FIELDS:
-        value = price_doc.get(field)
-        if value is not None:
-            candidates.append((field, D(value)))
-
-    if price_doc.get("cmAvg7d") is None and price_doc.get("cmAvg1d") is not None:
-        candidates.append(("cmAvg1d", D(price_doc.get("cmAvg1d"))))
-
-    return candidates
+def get_current_price(price_doc: dict) -> decimal.Decimal | None:
+    """Stessa logica di prezzo usata in tutto il resto del sito (mediana delle fonti
+    disponibili), invece di una cascata di campi indipendente specifica di questo
+    script. Vedi _compute_price_redline in src/metrics/getMarketData.py."""
+    value = _compute_price_redline(price_doc)
+    if value is None:
+        return None
+    return D(value)
 
 
 def load_latest_prices_by_item_id(db, item_ids: list) -> dict:
@@ -167,42 +158,36 @@ def price_item_id(alert_doc: dict):
     return alert_doc.get("cardId")
 
 
-def any_price_hits_conditions(
-    price_candidates: list[tuple[str, decimal.Decimal]],
+def price_hits_conditions(
+    current_price: decimal.Decimal,
     base_price: decimal.Decimal,
     target_price: decimal.Decimal,
     direction: str,
     change_raw,
-) -> tuple[bool, bool, tuple[str, decimal.Decimal] | None]:
+) -> tuple[bool, bool]:
+    if current_price <= 0:
+        return False, False
+
     hit_target = False
     hit_change = False
-    first_hit: tuple[str, decimal.Decimal] | None = None
 
     direction = (direction or "lte").lower()
     change_p = D(change_raw) if change_raw is not None else None
     base_ok = base_price is not None and base_price > 0
 
-    for label, current in price_candidates:
-        if current <= 0:
-            continue
+    if target_price and direction == "lte" and current_price <= target_price:
+        hit_target = True
+    elif target_price and direction == "gte" and current_price >= target_price:
+        hit_target = True
 
-        if target_price and direction == "lte" and current <= target_price:
-            hit_target = True
-            first_hit = first_hit or (label, current)
-        elif target_price and direction == "gte" and current >= target_price:
-            hit_target = True
-            first_hit = first_hit or (label, current)
+    if change_p is not None and base_ok:
+        delta_pct = (current_price - base_price) / base_price * 100
+        if change_p < 0 and delta_pct <= change_p:
+            hit_change = True
+        elif change_p > 0 and delta_pct >= change_p:
+            hit_change = True
 
-        if change_p is not None and base_ok:
-            delta_pct = (current - base_price) / base_price * 100
-            if change_p < 0 and delta_pct <= change_p:
-                hit_change = True
-                first_hit = first_hit or (label, current)
-            elif change_p > 0 and delta_pct >= change_p:
-                hit_change = True
-                first_hit = first_hit or (label, current)
-
-    return hit_target, hit_change, first_hit
+    return hit_target, hit_change
 
 
 def is_throttled(alert_doc: dict, now_utc: datetime) -> bool:
@@ -223,33 +208,35 @@ def build_triggered_item(alert_doc: dict, now_utc: datetime) -> dict:
     created_at = normalize_dt(alert_doc.get("createdAt"))
     created_at_str = created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if created_at else "ERROR"
 
-    candidates = build_price_candidates(latest_price)
+    current_price = get_current_price(latest_price)
+    if current_price is None:
+        return {}
+
     base = D(alert_doc.get("basePrice"))
     target = D(alert_doc.get("priceTarget") or "0")
     direction = (alert_doc.get("direction") or alert_doc.get("targetCondition") or "lte").lower()
 
-    hit_target, hit_change, first_hit = any_price_hits_conditions(
-        price_candidates=candidates,
+    hit_target, hit_change = price_hits_conditions(
+        current_price=current_price,
         base_price=base,
         target_price=target,
         direction=direction,
         change_raw=alert_doc.get("priceChange"),
     )
 
-    if not (hit_target or hit_change) or not first_hit:
+    if not (hit_target or hit_change):
         return {}
 
-    hit_label, hit_price = first_hit
     return {
         "alert": alert_doc,
         "alertId": alert_doc["_id"],
+        "userId": alert_doc.get("userId"),
         "card": card,
         "cardName": card_name,
         "cleanName": clean_name,
         "localId": local_id,
         "createdAtStr": created_at_str,
-        "hitLabel": hit_label,
-        "hitPrice": hit_price,
+        "hitPrice": current_price,
         "latestPriceCreatedAt": normalize_dt(latest_price.get("createdAt")),
         "links": build_card_links(card, clean_name, local_id),
     }
@@ -260,9 +247,8 @@ def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
     tcg_link = links.get("tcgplayer")
 
     return (
-        "Hi,<br>"
-        "we have good news for you! <br><br>"
-        "One of the cards you have been looking for has reached your price conditions.<br><br>"
+        "Hi,<br>we have good news for you! <br><br>"
+        "One of the cards you have been looking for has reached your price alert.<br><br>"
         f"<b>{item['cleanName']} #{item['localId']}</b> card is currently at "
         f"<b>{format_money(item['hitPrice'])}</b>.<br><br>"
         "Don't miss this opportunity!<br>"
@@ -272,12 +258,13 @@ def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
         + f"<li>Check it out on <a href='{links['ebay']}'>Ebay</a></li>"
         + f"<li>Check it out on <a href='{links['cardtrader']}'>CardTrader</a></li>"
         "</ul>"
+        f"<br>Price alerts and stamps are observations from our market data, not financial advice."
         f"<br>This email was sent to {to_email} because on date {item['createdAtStr']} "
-        f"you have set up an alert for the card {item['cardName']} on RED LINE "
+        f"you have set up an alert for the card {item['cardName']} on Red Line "
         "(https://redline.cards/).<br>"
-        "If you wish to stop receiving notifications, please log in to your account and update "
-        "your mail alert preferences in the <a href='https://redline.cards/account'>settings</a>.<br>"
-        "This is a free notification service of the RED LINE website (https://redline.cards/).<br><br>"
+        "If you wish to stop receiving alerts and notifications, you can "
+        f"<a href='{unsubscribe_link(item['userId'], item['alertId'])}'>unsubscribe</a> any time.<br>"
+        "This is a free notification service of the Red Line website (https://redline.cards/).<br><br>"
         "______<br><br>"
         "<i>This e-mail may contain confidential and/or privileged information.<br>"
         "If you are not the intended recipient or have received this e-mail in error, please notify "
