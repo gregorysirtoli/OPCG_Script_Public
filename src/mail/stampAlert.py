@@ -46,8 +46,8 @@ def card_link(item_id) -> str:
     return f"{CARD_LINK_BASE}/{item_id}"
 
 
-def unsubscribe_link(user_id, alert_id) -> str:
-    return f"https://redline.cards/api/alerts/stamp/unsubscribe?u={user_id}&_id={alert_id}"
+def unsubscribe_link(user_id, alert_id, item_id) -> str:
+    return f"https://redline.cards/api/alerts/stamp/unsubscribe?u={user_id}&_id={alert_id}&i={item_id}"
 
 
 def normalize_dt(dt):
@@ -180,11 +180,11 @@ def main() -> None:
         created_at = normalize_dt(alert.get("createdAt"))
         created_at_str = created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if created_at else "—"
 
-        subject = f"[RED LINE] Stamp changed: {card_name}"
+        subject = f"[RED LINE] {card_name} #{local_id} stamp changed to {current_key}!"
         body = build_body(
             to_email, card_name, set_id, local_id, price_str,
             old_key or "—", current_key, link, created_at_str, now,
-            unsubscribe_link(user_id, alert["_id"]),
+            unsubscribe_link(user_id, alert["_id"], item_id),
         )
         enqueue_mail(account_db, subject, body, to_email, user_id, alert["_id"])
         enqueue_notification(account_db, user_id, build_notification_text(card_name, old_key or "—", current_key))
