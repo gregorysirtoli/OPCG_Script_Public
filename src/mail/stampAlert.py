@@ -114,7 +114,7 @@ def build_body(
 
 
 def build_notification_text(card_name: str, old_stamp: str, new_stamp: str) -> str:
-    return f"{card_name} changed verdict: {old_stamp} -> {new_stamp}"
+    return f"{card_name} changed stamp: {old_stamp} -> {new_stamp}"
 
 
 # =============================================================================

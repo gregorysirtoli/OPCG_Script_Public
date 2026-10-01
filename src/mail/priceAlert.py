@@ -279,7 +279,7 @@ def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
 
 def build_notification_text(item: dict) -> str:
     return (
-        f"{item['cleanName']} #{item['localId']} has reached your price alert! Actual price is "
+        f"{item['cleanName']} #{item['localId']} has reached your price alert! Raw price is "
         f"{format_money(item['hitPrice'])}"
     )
 
@@ -361,7 +361,7 @@ async def main() -> None:
             continue
 
         scheduled_at = random_scheduled_at(now)
-        subject = f"[RED LINE] 🔔 {item['cleanName']} #{item['localId']} has a new price!"
+        subject = f"[RED LINE] {item['cleanName']} #{item['localId']} has a new price!"
         body = build_single_body(to_email, item, now)
         enqueue_mail(account_db, subject, body, to_email, user_id, item["alertId"], scheduled_at=scheduled_at)
         enqueue_notification(account_db, user_id, build_notification_text(item))
