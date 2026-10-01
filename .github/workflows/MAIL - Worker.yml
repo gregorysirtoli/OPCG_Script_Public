@@ -2,9 +2,8 @@ name: Mail - Worker
 
 on:
   schedule:
-    # Every minute (GitHub Actions minimum is 5 minutes)
-    # Use every 5 minutes as that is the GitHub minimum
-    - cron: "*/5 * * * *"
+    # Use every 7 minutes
+    - cron: "*/7 * * * *"
   workflow_dispatch: # Allow manual trigger
 
 jobs:
