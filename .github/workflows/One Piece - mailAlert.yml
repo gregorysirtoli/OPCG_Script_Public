@@ -38,6 +38,10 @@ jobs:
         run: |
           python -m src.mail.priceAlert
 
+      - name: Run Monthly Collection Report script
+        run: |
+          python -m src.mail.monthlyCollectionReport
+
       - name: Run Queue Stamp Alert script
         run: |
           python -m src.mail.stampAlert
