@@ -9,7 +9,7 @@ on:
 
 jobs:
   mail-worker:
-    name: Process mail queue
+    name: Mail - Process mail queue
     runs-on: ubuntu-latest
     timeout-minutes: 4
 
@@ -30,6 +30,8 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGODB_DB: ${{ secrets.MONGODB_DB }}
+          MONGODB_ACCOUNT_URI: ${{ secrets.MONGODB_ACCOUNT_URI }}
+          MONGODB_ACCOUNT_DB: ${{ secrets.MONGODB_ACCOUNT_DB }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
