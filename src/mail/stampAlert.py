@@ -113,8 +113,8 @@ def build_body(
     )
 
 
-def build_notification_text(card_name: str, old_stamp: str, new_stamp: str) -> str:
-    return f"{card_name} changed stamp: {old_stamp} -> {new_stamp}"
+def build_notification_text(card_name: str, local_id: str, old_stamp: str, new_stamp: str) -> str:
+    return f"{card_name} #{local_id} changed stamp: {old_stamp} -> {new_stamp}"
 
 
 # =============================================================================
@@ -187,7 +187,7 @@ def main() -> None:
             unsubscribe_link(user_id, alert["_id"], item_id),
         )
         enqueue_mail(account_db, subject, body, to_email, user_id, alert["_id"])
-        enqueue_notification(account_db, user_id, build_notification_text(card_name, old_key or "—", current_key))
+        enqueue_notification(account_db, user_id, build_notification_text(card_name, local_id, old_key or "—", current_key))
 
         market_db.StampAlert.update_one(
             {"_id": alert["_id"]},
