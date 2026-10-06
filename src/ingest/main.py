@@ -374,6 +374,9 @@ def main() -> int:
                             if release_date_value is not None:
                                 updates_clean["releaseDate"] = release_date_value
 
+                            if updates_map.get("priceChartingName"):
+                                updates_clean["priceChartingName"] = str(updates_map["priceChartingName"])
+
                             alert_payload = updates_map.get("__secondary_alert__")
                             if isinstance(alert_payload, dict):
                                 secondary_alerts.append(
