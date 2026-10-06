@@ -68,6 +68,52 @@ def partition_ok(mongo_id: Any, shard_idx: int, shard_total: int) -> bool:
     h = hash(str(mongo_id))
     return (h % shard_total) == shard_idx
 
+def build_ebay_siblings(coll_cards, item_id_field: str, key_fn) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Group cards that are printings of the same card (key given by the provider).
+    Non-"en" cards also get linkedName: the name of the "en" card linked through cardMarketIds.
+    """
+    cards = list(
+        coll_cards.find(
+            {},
+            {
+                "_id": 0, item_id_field: 1, "localId": 1, "name": 1, "setId": 1, "setName": 1, "type": 1,
+                "variant": 1, "language": 1, "cardMarketId": 1, "cardMarketIds": 1,
+            },
+        )
+    )
+    cards = [card for card in cards if key_fn(card)]
+    en_by_cm_id: Dict[Any, List[Dict[str, Any]]] = {}
+    for card in cards:
+        if str(card.get("language") or "").lower() == "en" and card.get("cardMarketId") is not None:
+            en_by_cm_id.setdefault(card["cardMarketId"], []).append(card)
+
+    siblings_by_local_id: Dict[str, List[Dict[str, Any]]] = {}
+    for card in cards:
+        sibling = {
+            "itemId": card.get(item_id_field),
+            "name": card.get("name"),
+            "setId": card.get("setId"),
+            "setName": card.get("setName"),
+            "type": card.get("type"),
+            "variant": card.get("variant"),
+            "language": card.get("language"),
+        }
+        if str(card.get("language") or "").lower() != "en" and isinstance(card.get("cardMarketIds"), list):
+            linked_names = {
+                en_card.get("name")
+                for cm_id in card["cardMarketIds"]
+                if cm_id != card.get("cardMarketId")
+                for en_card in en_by_cm_id.get(cm_id, [])
+                if key_fn(en_card) == key_fn(card)
+            }
+            # ambiguous link (several "en" names): skip it
+            if len(linked_names) == 1:
+                sibling["linkedName"] = linked_names.pop()
+        siblings_by_local_id.setdefault(key_fn(card), []).append(sibling)
+    return siblings_by_local_id
+
+
 def main() -> int:
     settings = load_settings()
     args = parse_args()
@@ -124,6 +170,7 @@ def main() -> int:
     secondary = next((p for p in providers if getattr(p, "name", "") == "secondary"), None)
     third = next((p for p in providers if getattr(p, "name", "") == "third"), None)
     cardtrader = next((p for p in providers if getattr(p, "name", "") == "cardtrader"), None)
+    ebay = next((p for p in providers if getattr(p, "name", "") == "ebay"), None)
     if not primary:
         logger.warning("Primary provider not found – proceeding without primary.")
     if not secondary:
@@ -132,6 +179,8 @@ def main() -> int:
         logger.warning("Third provider not found - proceeding without third provider.")
     if not cardtrader:
         logger.warning("CardTrader provider not found - proceeding without cardtrader provider.")
+    if not ebay:
+        logger.warning("eBay provider not found - proceeding without ebay provider.")
 
     # ===== Query Cards (proiezione minima) =====
     projection = {
@@ -143,6 +192,7 @@ def main() -> int:
         "localId": 1,
         "type": 1,
         "setId": 1,
+        "setName": 1,
         "yuyuteiId": 1,
         "yuyuteiLink": 1,
         "cardTraderId": 1,
@@ -172,7 +222,6 @@ def main() -> int:
     BATCH = int(os.getenv("PRICES_BATCH", "500"))
     SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "0"))
     DISABLE_SHARDING = os.getenv("DISABLE_SHARDING", "false").lower() == "true"
-    TEST_ONLY_TCGPLAYER_ID = 492369
 
     rows_batch: List[Dict[str, Any]] = []
     secondary_alerts: List[Dict[str, Any]] = []
@@ -182,6 +231,10 @@ def main() -> int:
     last_id = None
     reached_limit = False
     run_created_at: Optional[datetime] = None
+
+    # Printings of the same card, used by the eBay provider to tell them apart
+    ebay_key_fn = getattr(ebay, "sibling_key", None) or (lambda card: card.get("localId") or None)
+    siblings_by_local_id = build_ebay_siblings(coll_cards, ITEM_ID_FIELD, ebay_key_fn) if ebay else {}
 
     while True:
         if reached_limit:
@@ -219,12 +272,10 @@ def main() -> int:
 
                 # DEBUG: processa solo questa card
                 #if item_id != "RED02XXOP01002PERRA277477":
+                #if doc.get("localId") != "OP09-001":
                 #    continue
 
                 primary_id = doc.get(PRIMARY_ID_FIELD)
-                #if primary_id != TEST_ONLY_TCGPLAYER_ID:
-                #    continue
-
                 card_variants = doc.get("variants") if isinstance(doc.get("variants"), list) else []
                 card_variant = str(doc.get("variant") or "").strip()
                 external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
@@ -392,6 +443,33 @@ def main() -> int:
                                 card_trader_id,
                                 e,
                             )
+                # ===== eBay (floor / live listings / sold) =====
+                if ebay:
+                    try:
+                        ebay_siblings = siblings_by_local_id.get(ebay_key_fn(doc), [])
+                        ebay_fields = ebay.fetch_ebay_prices(
+                            {
+                                "itemId": item_id,
+                                "localId": doc.get("localId"),
+                                "name": doc.get("name"),
+                                "language": doc.get("language", "en"),
+                                "variant": card_variant,
+                                "variants": card_variants,
+                                "type": doc.get("type", ""),
+                                "setId": doc.get("setId"),
+                                "setName": doc.get("setName"),
+                                "linkedName": next(
+                                    (s.get("linkedName") for s in ebay_siblings if s.get("itemId") == item_id),
+                                    None,
+                                ),
+                                "siblings": ebay_siblings,
+                            }
+                        ) or {}
+                        for field_name, field_value in ebay_fields.items():
+                            if field_value is not None:
+                                row[field_name] = field_value
+                    except Exception as e:
+                        logger.warning("eBay error itemId=%s: %s", item_id, e)
                 if len(row.keys()) <= 3:
                     continue
 
