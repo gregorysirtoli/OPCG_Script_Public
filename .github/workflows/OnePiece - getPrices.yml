@@ -43,6 +43,11 @@ jobs:
       CM_PRICEGUIDE_URL: ${{ secrets.CM_PRICEGUIDE_URL }}
       CM_PRICEGUIDE_ACCESSORIES_URL: ${{ secrets.CM_PRICEGUIDE_ACCESSORIES_URL }}
 
+      # === EBAY ===
+      EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+      EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+      EBAY_SOLD_ENABLED: "false"
+
       # ===  FX ===
       FX_API_URL: ${{ secrets.FX_API_URL }}
 
