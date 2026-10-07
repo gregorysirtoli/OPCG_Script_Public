@@ -2,6 +2,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import re
 from math import exp, log1p, sqrt, tanh
 from statistics import median
 from typing import Any, Dict, List, Optional, Tuple
@@ -18,6 +19,7 @@ SET_TOP_BASE_PRICE = 20.0
 SET_MARKET_HISTORY_COLLECTION = "SetsMarketData"
 CARD_STAMPS_COLLECTION = "CardsStamps"
 CARD_STAMP_CHANGES_COLLECTION = "CardsStampChanges"
+CHARACTER_POPULARITY_COLLECTION = "wt100"
 SET_MARKET_HISTORY_FIELDS = (
     "cardsCount",
     "otherTypesCount",
@@ -146,6 +148,48 @@ STAMP_RULES = {
         "kind": "supply",
     },
 }
+
+
+def _normalize_name_for_match(value: Any) -> str:
+    # lowercase + solo token alfanumerici, con spazi ai bordi: cosi' "Monkey.D.Luffy"
+    # e "Monkey D. Luffy" combaciano e "Ace" non matcha dentro "Space"/"Palace".
+    tokens = re.findall(r"[a-z0-9]+", str(value or "").lower())
+    return f" {' '.join(tokens)} " if tokens else ""
+
+
+def _load_character_popularity(db: Database) -> List[Tuple[str, int]]:
+    """Ritorna [(nome normalizzato, position)] dalla collection wt100, ordinato per
+    position crescente (1 = personaggio piu' popolare)."""
+    out: List[Tuple[str, int]] = []
+    for doc in db[CHARACTER_POPULARITY_COLLECTION].find({}, {"name": 1, "position": 1}):
+        # alias tra parentesi fuori dal match: "Mr.2.Bon.Kurei(Bentham)" -> "Mr.2.Bon.Kurei"
+        needle = _normalize_name_for_match(
+            re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", str(doc.get("name") or ""))
+        )
+        position = _to_number(doc.get("position"))
+        if not needle or position is None:
+            continue
+        out.append((needle, int(position)))
+    out.sort(key=lambda x: x[1])
+    return out
+
+
+def _match_character_popularity(
+    card_name: Any,
+    characters: List[Tuple[str, int]],
+) -> Optional[int]:
+    # Se il nome carta contiene piu' personaggi (es. "Ace & Sabo & Luffy") vince
+    # quello con la position migliore (piu' bassa).
+    if not characters:
+        return None
+    # il contenuto delle [] (variante, evento, set di provenienza) non conta per il match
+    haystack = _normalize_name_for_match(re.sub(r"\[[^\]]*\]", " ", str(card_name or "")))
+    if not haystack:
+        return None
+    for needle, position in characters:
+        if needle in haystack:
+            return position
+    return None
 
 
 def _bulk_write_resilient(
@@ -2170,7 +2214,7 @@ def update_cards_market_data(
     if limit_ids:
         q_cards["id"] = {"$in": limit_ids}
 
-    base_cards = list(coll_cards.find(q_cards, {"id": 1, "setId": 1, "type": 1, "marketData": 1}))
+    base_cards = list(coll_cards.find(q_cards, {"id": 1, "name": 1, "setId": 1, "type": 1, "marketData": 1}))
     base_cards_by_id: Dict[str, Dict[str, Any]] = {
         card.get("id"): card
         for card in base_cards
@@ -2368,6 +2412,8 @@ def update_cards_market_data(
         if isinstance(item_id, str):
             existing_stamps_by_item[item_id] = stamp_doc
 
+    character_popularity = _load_character_popularity(db)
+
     ops: List[UpdateOne] = []
     stamp_snapshot_ops: List[UpdateOne] = []
     stamp_change_ops: List[InsertOne] = []
@@ -2388,6 +2434,10 @@ def update_cards_market_data(
             psa10_count_previous,
             psa10_growth_rate,
             population_history_by_card.get(cid, []),
+        )
+        md["characterPopularity"] = _match_character_popularity(
+            base_card.get("name"),
+            character_popularity,
         )
 
         current_band = md.get("priceBand") if isinstance(md.get("priceBand"), dict) else None
