@@ -511,10 +511,33 @@ def _normalize_bucket_key(value: Optional[str]) -> str:
 
 def _norm_to_list(value: Any, normalize: bool = False) -> List[str]:
     raw = value if isinstance(value, list) else ([value] if value else [])
-    out = [str(x).strip() for x in raw if str(x).strip()]
+    out = [str(x).strip() for x in raw if x is not None and str(x).strip()]
     if normalize:
         return [_normalize_bucket_key(x) for x in out]
     return out
+
+
+def _card_attribute(doc: Dict[str, Any], *keys: str) -> Any:
+    """
+    Valore di un attributo della carta, cercato per ogni key prima a top-level e poi
+    dentro customAttributes (dict dinamico: le key cambiano per gioco/carta e il valore
+    puo' essere lista, stringa o None). Ritorna il primo valore non vuoto, altrimenti None.
+    """
+    custom = doc.get("customAttributes")
+    if not isinstance(custom, dict):
+        custom = {}
+    custom_lower: Optional[Dict[str, Any]] = None
+    for key in keys:
+        for value in (doc.get(key), custom.get(key)):
+            if value not in (None, "", []):
+                return value
+        # stessa key scritta con case diverso (es. "cardtype" vs "cardType")
+        if custom_lower is None:
+            custom_lower = {str(k).lower(): v for k, v in custom.items()}
+        value = custom_lower.get(key.lower())
+        if value not in (None, "", []):
+            return value
+    return None
 
 
 def _bucket_add(
@@ -1580,9 +1603,9 @@ def _build_set_market_data(
         price = row["price"] if row["price"] is not None and row["price"] > 0 else 0.0
         has_price = price > 0
 
-        colors = _norm_to_list(doc.get("color"), normalize=True) or ["DON!!"]
-        rarities = _norm_to_list(doc.get("rarityName") or doc.get("rarity"), normalize=True) or ["DON!!"]
-        attributes = _norm_to_list(doc.get("attribute") or doc.get("attributes"), normalize=True) or ["DON!!"]
+        colors = _norm_to_list(_card_attribute(doc, "color"), normalize=True) or ["DON!!"]
+        rarities = _norm_to_list(_card_attribute(doc, "rarityName", "rarity"), normalize=True) or ["DON!!"]
+        attributes = _norm_to_list(_card_attribute(doc, "attribute", "attributes"), normalize=True) or ["DON!!"]
 
         for values, bucket_map in (
             (colors, color_map),
@@ -2060,6 +2083,7 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
             "rarityName": 1,
             "attribute": 1,
             "attributes": 1,
+            "customAttributes": 1,
             "marketData": 1,
         },
     ):
