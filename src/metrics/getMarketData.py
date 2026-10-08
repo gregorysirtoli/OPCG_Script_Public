@@ -1278,6 +1278,10 @@ def compute_market_data_for_item(
 
     price_redline = _compute_price_redline(latest)
 
+    # eBay: se manca nello snapshot più recente, usa l'ultimo valore disponibile andando a ritroso
+    price_ebay, _ = _extract_latest_and_previous_numeric(prices, "priceEbay")
+    ebay_listings, _ = _extract_latest_and_previous_numeric(prices, "ebayListings")
+
     psa10_30d_usd = _pick_baseline_value_around(
         prices,
         "psa10",
@@ -1408,8 +1412,8 @@ def compute_market_data_for_item(
         "cmAvg1d": _as_number_or_none((latest or {}).get("cmAvg1d")), # USD
         "cmAvg7d": _as_number_or_none((latest or {}).get("cmAvg7d")), # USD
         "cmAvg30d": _as_number_or_none((latest or {}).get("cmAvg30d")), # USD
-        "priceEbay": _as_number_or_none((latest or {}).get("priceEbay")), # USD
-        "ebayListings": _as_number_or_none((latest or {}).get("ebayListings")),
+        "priceEbay": _as_number_or_none(price_ebay), # USD
+        "ebayListings": _as_number_or_none(ebay_listings),
         "priceRedLine": _as_number_or_none(price_redline), # USD
 
         "sgc10": _as_number_or_none(sgc10_usd), # USD
