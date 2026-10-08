@@ -1408,6 +1408,8 @@ def compute_market_data_for_item(
         "cmAvg1d": _as_number_or_none((latest or {}).get("cmAvg1d")), # USD
         "cmAvg7d": _as_number_or_none((latest or {}).get("cmAvg7d")), # USD
         "cmAvg30d": _as_number_or_none((latest or {}).get("cmAvg30d")), # USD
+        "priceEbay": _as_number_or_none((latest or {}).get("priceEbay")), # USD
+        "ebayListings": _as_number_or_none((latest or {}).get("ebayListings")),
         "priceRedLine": _as_number_or_none(price_redline), # USD
 
         "sgc10": _as_number_or_none(sgc10_usd), # USD
@@ -2272,6 +2274,8 @@ def update_cards_market_data(
             "cmPriceLow": 1,
             "priceUngraded": 1,
             "pricePriceCharting": 1,
+            "priceEbay": 1,
+            "ebayListings": 1,
             "listings": 1,
             "ctListings": 1,
             "sellers": 1,
