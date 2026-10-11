@@ -59,7 +59,14 @@ def fit_tier_models(df: pd.DataFrame, y_col: str, cat_cols: list[str], num_cols:
 
 def predict_tier_models(tier_models: TierModels, df: pd.DataFrame) -> dict[float, np.ndarray]:
     X = df[tier_models.feature_cols_cat + tier_models.feature_cols_num]
-    out = {}
-    for q, pipe in tier_models.models.items():
-        out[q] = pipe.predict(X)
-    return out
+    qs = sorted(tier_models.models)
+    if not qs:
+        return {}
+    preds = np.column_stack([tier_models.models[q].predict(X) for q in qs])
+    # I modelli sono addestrati indipendentemente per quantile, quindi possono incrociarsi
+    # (es. q80 < q50): riordino per riga così che i quantili siano monotoni (rearrangement).
+    crossed = int((np.diff(preds, axis=1) < 0).any(axis=1).sum())
+    if crossed:
+        print(f"[WARN] Quantili incrociati su {crossed}/{len(preds)} righe: riordinati.")
+        preds = np.sort(preds, axis=1)
+    return {q: preds[:, i] for i, q in enumerate(qs)}
