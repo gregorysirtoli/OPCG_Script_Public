@@ -236,6 +236,16 @@ def main() -> int:
     ebay_key_fn = getattr(ebay, "sibling_key", None) or (lambda card: card.get("localId") or None)
     siblings_by_local_id = build_ebay_siblings(coll_cards, ITEM_ID_FIELD, ebay_key_fn) if ebay else {}
 
+    # ===== Carte già prezzate oggi (re-run nella stessa giornata) =====
+    day_start = ROME.localize(datetime.combine(run_dt_rome.date(), datetime.min.time()))
+    done_today = {
+        p["itemId"]
+        for p in coll_prices.find({"createdAt": {"$gte": day_start}}, {"_id": 0, "itemId": 1})
+        if p.get("itemId")
+    }
+    skipped_today = 0
+    logger.info("Cards already priced today (since %s): %d", day_start.isoformat(), len(done_today))
+
     while True:
         if reached_limit:
             break
@@ -253,8 +263,15 @@ def main() -> int:
         if not page:
             break
 
-        fetched += len(page)
         last_id = page[-1]["_id"]
+
+        # salta le carte che hanno già un prezzo nella giornata corrente
+        if done_today:
+            page_size = len(page)
+            page = [d for d in page if d.get(ITEM_ID_FIELD) not in done_today]
+            skipped_today += page_size - len(page)
+
+        fetched += len(page)
 
         for doc in page:
             if SAMPLE_LIMIT and total >= SAMPLE_LIMIT:
@@ -515,14 +532,15 @@ def main() -> int:
     elapsed = end_time - start_time
     minutes = elapsed / 60.0
 
-    summary = f"Inserted: {inserted} / Scanned: {total}"
+    summary = f"Inserted: {inserted} / Scanned: {total} / Skipped (already priced today): {skipped_today}"
     logger.info(summary)
     body = (
         f"Start: {start_dt:%Y-%m-%d %H:%M:%S}\n"
         f"End:   {end_dt:%Y-%m-%d %H:%M:%S}\n"
         f"Durata: {minutes:.1f} minuti ({elapsed:.1f} secondi)\n"
         f"Inserted: {inserted}\n"
-        f"Scanned: {total}"
+        f"Scanned: {total}\n"
+        f"Skipped (already priced today): {skipped_today}"
     )
 
     GAME = os.getenv("GAME") or "N/A";
