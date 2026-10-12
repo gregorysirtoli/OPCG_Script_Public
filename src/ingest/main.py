@@ -125,6 +125,12 @@ def main() -> int:
     logger.info("=== Start Ingestor ===")
     logger.info("Execution fingerprint: %s", run_fingerprint)
 
+    GAME = os.getenv("GAME") or "N/A"
+    send_email(
+        f"⚠️ [1/5][WORKFLOW] START - Prices Ingestor: {GAME}",
+        f"Start: {start_dt:%Y-%m-%d %H:%M:%S}\nExecution fingerprint: {run_fingerprint}",
+    )
+
     # ===== Field mapping (da ENV) =====
     ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "id") or "id"
     PRIMARY_ID_FIELD = os.getenv("PRIMARY_ID_FIELD")
@@ -543,7 +549,6 @@ def main() -> int:
         f"Skipped (already priced today): {skipped_today}"
     )
 
-    GAME = os.getenv("GAME") or "N/A";
     send_email("✅ [1/5][WORKFLOW] Prices Ingestor: " + GAME, body)
 
     if secondary_alerts:
@@ -574,7 +579,6 @@ def main() -> int:
 if __name__ == "__main__":
     GAME = os.getenv("GAME") or "N/A"
     try:
-        send_email(f"⚠️ [1/5][WORKFLOW] START - Prices Ingestor: {GAME}", traceback.format_exc())
         sys.exit(main())
     except Exception:     
         send_email(f"🚫 [1/5][WORKFLOW] Prices Ingestor: {GAME}", traceback.format_exc())
