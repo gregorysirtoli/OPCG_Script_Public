@@ -25,6 +25,7 @@ from src.core.logging_setup import configure_logger
 from src.core.utils import TokenBucket, get_fx_eur_usd
 from src.metrics.getMarketData import _compute_price_redline
 from src.ingest.priceArchive import archive_old_prices
+from src.core.prices_graded import PRICES_GRADED_COLLECTION, ensure_prices_graded_collection, split_graded_row
 logger = configure_logger()
 
 # =========================
@@ -163,6 +164,9 @@ def main() -> int:
     db = client[settings.mongodb_db]
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
+    # i campi PriceCharting vanno in PricesGraded, collegati alla riga di Prices dallo stesso _id
+    ensure_prices_graded_collection(db)
+    coll_prices_graded = db[PRICES_GRADED_COLLECTION]
 
     # ===== Archiviazione Prices (PRIMA dell'ingest) =====
     if settings.mongodb_archive_uri and settings.mongodb_archive_db:
@@ -238,6 +242,8 @@ def main() -> int:
     DISABLE_SHARDING = os.getenv("DISABLE_SHARDING", "false").lower() == "true"
 
     rows_batch: List[Dict[str, Any]] = []
+    graded_batch: List[Dict[str, Any]] = []
+    inserted_graded = 0
     secondary_alerts: List[Dict[str, Any]] = []
     inserted = 0
     total = 0
@@ -519,15 +525,25 @@ def main() -> int:
                 if price_redline is not None:
                     row["priceRedLine"] = price_redline
 
+                graded_row = split_graded_row(row)
+                if graded_row:
+                    graded_batch.append(graded_row)
                 rows_batch.append(row)
 
                 if len(rows_batch) >= BATCH:
                     try:
                         res = coll_prices.insert_many(rows_batch, ordered=False)
                         inserted += len(res.inserted_ids)
-                        logger.info("Batch insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+                        if graded_batch:
+                            res_graded = coll_prices_graded.insert_many(graded_batch, ordered=False)
+                            inserted_graded += len(res_graded.inserted_ids)
+                        logger.info(
+                            "Batch insert: %d docs (tot=%d) | graded tot=%d",
+                            len(res.inserted_ids), inserted, inserted_graded,
+                        )
                     finally:
                         rows_batch.clear()
+                        graded_batch.clear()
 
             except Exception as e:
                 logger.error("Error on item _id=%s: %s", doc.get("_id"), e.__class__.__name__)
@@ -541,9 +557,16 @@ def main() -> int:
         try:
             res = coll_prices.insert_many(rows_batch, ordered=False)
             inserted += len(res.inserted_ids)
-            logger.info("Final insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+            if graded_batch:
+                res_graded = coll_prices_graded.insert_many(graded_batch, ordered=False)
+                inserted_graded += len(res_graded.inserted_ids)
+            logger.info(
+                "Final insert: %d docs (tot=%d) | graded tot=%d",
+                len(res.inserted_ids), inserted, inserted_graded,
+            )
         finally:
             rows_batch.clear()
+            graded_batch.clear()
 
     end_time = time.time()
     end_dt = datetime.now()

@@ -21,6 +21,7 @@ from src.core.logging_setup import configure_logger
 from src.core.utils import get_fx_eur_usd
 from src.metrics.getMarketData import _compute_price_redline
 from src.ingest.main import DISABLE_GRADING, build_ebay_siblings
+from src.core.prices_graded import PRICES_GRADED_COLLECTION, ensure_prices_graded_collection, split_graded_row
 
 logger = configure_logger()
 
@@ -69,13 +70,14 @@ def _rome_day_bounds(reference_dt: datetime) -> tuple[datetime, datetime]:
     return start_of_day, end_of_day
 
 
-def _delete_latest_price_for_today(coll_prices, item_id: str, reference_dt: datetime) -> bool:
+def _delete_latest_price_for_today(coll_prices, coll_prices_graded, item_id: str, reference_dt: datetime) -> bool:
     start_of_day, end_of_day = _rome_day_bounds(reference_dt)
+    today = {
+        "itemId": item_id,
+        "createdAt": {"$gte": start_of_day, "$lt": end_of_day},
+    }
     latest_doc = coll_prices.find_one(
-        {
-            "itemId": item_id,
-            "createdAt": {"$gte": start_of_day, "$lt": end_of_day},
-        },
+        today,
         sort=[("createdAt", -1), ("_id", -1)],
         projection={"_id": 1},
     )
@@ -83,6 +85,8 @@ def _delete_latest_price_for_today(coll_prices, item_id: str, reference_dt: date
         return False
 
     res = coll_prices.delete_one({"_id": latest_doc["_id"]})
+    # la riga PriceCharting collegata (stesso _id) va via con quella di Prices
+    coll_prices_graded.delete_many({**today, "_id": latest_doc["_id"]})
     return res.deleted_count == 1
 
 
@@ -156,6 +160,9 @@ def main() -> int:
     db = client[settings.mongodb_db]
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
+    # i campi PriceCharting vanno in PricesGraded, collegati alla riga di Prices dallo stesso _id
+    ensure_prices_graded_collection(db)
+    coll_prices_graded = db[PRICES_GRADED_COLLECTION]
 
     logger.info("Loading providers module: %s", settings.providers_module or "src.providers.mock")
     providers = load_provider_module(settings.providers_module)
@@ -205,6 +212,8 @@ def main() -> int:
     sample_limit = int(os.getenv("SAMPLE_LIMIT", "0"))
 
     rows_batch: List[Dict[str, Any]] = []
+    graded_batch: List[Dict[str, Any]] = []
+    inserted_graded = 0
     secondary_alerts: List[Dict[str, Any]] = []
     inserted = 0
     deleted = 0
@@ -260,7 +269,7 @@ def main() -> int:
                 if not item_id:
                     continue
 
-                if _delete_latest_price_for_today(coll_prices, item_id, run_dt_rome):
+                if _delete_latest_price_for_today(coll_prices, coll_prices_graded, item_id, run_dt_rome):
                     deleted += 1
 
                 primary_id = doc.get(primary_id_field)
@@ -447,15 +456,25 @@ def main() -> int:
                 if price_redline is not None:
                     row["priceRedLine"] = price_redline
 
+                graded_row = split_graded_row(row)
+                if graded_row:
+                    graded_batch.append(graded_row)
                 rows_batch.append(row)
 
                 if len(rows_batch) >= batch_size:
                     try:
                         res = coll_prices.insert_many(rows_batch, ordered=False)
                         inserted += len(res.inserted_ids)
-                        logger.info("Batch insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+                        if graded_batch:
+                            res_graded = coll_prices_graded.insert_many(graded_batch, ordered=False)
+                            inserted_graded += len(res_graded.inserted_ids)
+                        logger.info(
+                            "Batch insert: %d docs (tot=%d) | graded tot=%d",
+                            len(res.inserted_ids), inserted, inserted_graded,
+                        )
                     finally:
                         rows_batch.clear()
+                        graded_batch.clear()
 
             except Exception:
                 logger.error("Error on item _id=%s: %s", doc.get("_id"), traceback.format_exc())
@@ -468,9 +487,16 @@ def main() -> int:
         try:
             res = coll_prices.insert_many(rows_batch, ordered=False)
             inserted += len(res.inserted_ids)
-            logger.info("Final insert: %d docs (tot=%d)", len(res.inserted_ids), inserted)
+            if graded_batch:
+                res_graded = coll_prices_graded.insert_many(graded_batch, ordered=False)
+                inserted_graded += len(res_graded.inserted_ids)
+            logger.info(
+                "Final insert: %d docs (tot=%d) | graded tot=%d",
+                len(res.inserted_ids), inserted, inserted_graded,
+            )
         finally:
             rows_batch.clear()
+            graded_batch.clear()
 
     end_time = time.time()
     end_dt = datetime.now()

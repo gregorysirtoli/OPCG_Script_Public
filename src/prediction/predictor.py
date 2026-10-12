@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from .config import MongoConfig, MLConfig
 from .io_mongo import get_db, load_collection, upsert_many
+from src.core.prices_graded import attach_graded_df
 from .dataset import (
     prep_cards, prep_prices_daily, reindex_daily_fill,
     add_features_daily, filter_min_history
@@ -39,6 +40,7 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     cards = load_collection(db, mongo.col_cards, match={"type": "Cards"})
     sets = load_collection(db, getattr(mongo, "col_sets", "Sets"))
     prices = load_collection(db, mongo.col_prices)
+    prices = attach_graded_df(db, prices, {})
 
     cards_p = prep_cards(cards, asof, sets, dynamic_cat_keys=dyn_cat_keys, dynamic_num_keys=dyn_num_keys)
 

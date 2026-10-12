@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from .config import MongoConfig, MLConfig
 from .io_mongo import get_db, load_collection
+from src.core.prices_graded import attach_graded_df
 from .dataset import (
     prep_cards, prep_prices_daily, reindex_daily_fill,
     add_features_daily, add_target_28d, filter_min_history
@@ -51,10 +52,11 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
         getattr(mongo, "col_sets", "Sets"),
         projection={"id": 1, "releaseDate": 1, "name": 1},
     )
+    prices_match = {"createdAt": {"$gte": date_from.to_pydatetime()}}
     prices = load_collection(
         db,
         mongo.col_prices,
-        match={"createdAt": {"$gte": date_from.to_pydatetime()}},
+        match=prices_match,
         projection={
             "itemId": 1,
             "createdAt": 1,
@@ -73,6 +75,7 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
             "spread": 1,
         },
     )
+    prices = attach_graded_df(db, prices, prices_match, fields=("pricePriceCharting", "priceUngraded"))
     log_step(f"load cards={len(cards):,} sets={len(sets):,} prices={len(prices):,} (from {date_from.date()} to {asof.date()})")
 
     if prices.empty:

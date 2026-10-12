@@ -11,6 +11,8 @@ from pymongo import InsertOne, UpdateOne
 from pymongo.database import Database
 from pymongo.errors import ExecutionTimeout
 
+from src.core.prices_graded import attach_graded
+
 GRADING_FEES = 80
 SET_TREND_DAYS = 90
 SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
@@ -2104,8 +2106,9 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
     ]
     sealed_latest: Dict[str, Dict[str, Any]] = {}
     if sealed_ids:
-        for doc in coll_prices.find(
-            {"itemId": {"$in": sealed_ids}},
+        sealed_query = {"itemId": {"$in": sealed_ids}}
+        sealed_docs = list(coll_prices.find(
+            sealed_query,
             {
                 "itemId": 1,
                 "createdAt": 1,
@@ -2121,7 +2124,9 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
                 "priceUngraded": 1,
                 "pricePriceCharting": 1,
             },
-        ).sort("createdAt", -1):
+        ).sort("createdAt", -1))
+        attach_graded(db, sealed_docs, sealed_query, fields=("priceUngraded", "pricePriceCharting"))
+        for doc in sealed_docs:
             item_id = doc.get("itemId")
             if isinstance(item_id, str) and item_id not in sealed_latest:
                 sealed_latest[item_id] = doc
@@ -2262,8 +2267,9 @@ def update_cards_market_data(
 
     since = datetime.now(timezone.utc) - timedelta(days=days_back)
 
+    prices_query = {"itemId": {"$in": ids}, "createdAt": {"$gte": since}}
     cur = coll_prices.find(
-        {"itemId": {"$in": ids}, "createdAt": {"$gte": since}},
+        prices_query,
         {
             "itemId": 1,
             "createdAt": 1,
@@ -2295,8 +2301,18 @@ def update_cards_market_data(
         },
     )
 
+    price_docs = attach_graded(
+        db,
+        list(cur),
+        prices_query,
+        fields=(
+            "priceUngraded", "pricePriceCharting",
+            "psa10", "bsg10", "sgc10", "cgc10", "cgc10pristine", "bsg10black", "tag10", "ace10",
+        ),
+    )
+
     per_item: Dict[str, List[Dict[str, Any]]] = {}
-    for p in cur:
+    for p in price_docs:
         per_item.setdefault(p["itemId"], []).append(p)
 
     # order by createdAt DESC
