@@ -540,6 +540,9 @@ def main() -> int:
 
     summary = f"Inserted: {inserted} / Scanned: {total} / Skipped (already priced today): {skipped_today}"
     logger.info(summary)
+    pc_debug = secondary.pricecharting_debug_summary() if hasattr(secondary, "pricecharting_debug_summary") else ""
+    if pc_debug:
+        logger.info("[DEBUG] %s", pc_debug)
     body = (
         f"Start: {start_dt:%Y-%m-%d %H:%M:%S}\n"
         f"End:   {end_dt:%Y-%m-%d %H:%M:%S}\n"
@@ -547,6 +550,7 @@ def main() -> int:
         f"Inserted: {inserted}\n"
         f"Scanned: {total}\n"
         f"Skipped (already priced today): {skipped_today}"
+        + (f"\n{pc_debug}" if pc_debug else "")
     )
 
     send_email("✅ [1/5][WORKFLOW] Prices Ingestor: " + GAME, body)
