@@ -20,6 +20,7 @@ from src.core.emailer import send_email
 from src.core.logging_setup import configure_logger
 from src.core.utils import get_fx_eur_usd
 from src.metrics.getMarketData import _compute_price_redline
+from src.ingest.main import DISABLE_GRADING, build_ebay_siblings
 
 logger = configure_logger()
 
@@ -107,6 +108,10 @@ def _append_secondary_alert(
 
 
 def main() -> int:
+    if DISABLE_GRADING:
+        logger.warning("Grading is DISABLED (DISABLE_GRADING=True in src/ingest/main.py): retry skipped.")
+        return 0
+
     settings = load_settings()
     args = parse_args()
     start_time = time.time()
@@ -158,12 +163,14 @@ def main() -> int:
     secondary = next((p for p in providers if getattr(p, "name", "") == "secondary"), None)
     third = next((p for p in providers if getattr(p, "name", "") == "third"), None)
     cardtrader = next((p for p in providers if getattr(p, "name", "") == "cardtrader"), None)
+    ebay = next((p for p in providers if getattr(p, "name", "") == "ebay"), None)
     logger.info(
-        "Providers ready | primary=%s secondary=%s third=%s cardtrader=%s",
+        "Providers ready | primary=%s secondary=%s third=%s cardtrader=%s ebay=%s",
         "yes" if primary else "no",
         "yes" if secondary else "no",
         "yes" if third else "no",
         "yes" if cardtrader else "no",
+        "yes" if ebay else "no",
     )
 
     projection = {
@@ -175,6 +182,7 @@ def main() -> int:
         "localId": 1,
         "type": 1,
         "setId": 1,
+        "setName": 1,
         "yuyuteiId": 1,
         "yuyuteiLink": 1,
         "cardTraderId": 1,
@@ -204,6 +212,10 @@ def main() -> int:
     fetched = 0
     last_id = None
     reached_limit = False
+
+    # Printings of the same card, used by the eBay provider to tell them apart
+    ebay_key_fn = getattr(ebay, "sibling_key", None) or (lambda card: card.get("localId") or None)
+    siblings_by_local_id = build_ebay_siblings(coll_cards, item_id_field, ebay_key_fn) if ebay else {}
 
     logger.info(
         "Starting scan for cards where %s starts with '%s'",
@@ -400,6 +412,33 @@ def main() -> int:
                                 card_trader_id,
                                 exc,
                             )
+
+                if ebay:
+                    try:
+                        ebay_siblings = siblings_by_local_id.get(ebay_key_fn(doc), [])
+                        ebay_fields = ebay.fetch_ebay_prices(
+                            {
+                                "itemId": item_id,
+                                "localId": doc.get("localId"),
+                                "name": doc.get("name"),
+                                "language": doc.get("language", "en"),
+                                "variant": card_variant,
+                                "variants": card_variants,
+                                "type": doc.get("type", ""),
+                                "setId": doc.get("setId"),
+                                "setName": doc.get("setName"),
+                                "linkedName": next(
+                                    (s.get("linkedName") for s in ebay_siblings if s.get("itemId") == item_id),
+                                    None,
+                                ),
+                                "siblings": ebay_siblings,
+                            }
+                        ) or {}
+                        for field_name, field_value in ebay_fields.items():
+                            if field_value is not None:
+                                row[field_name] = field_value
+                    except Exception as exc:
+                        logger.warning("eBay error itemId=%s: %s", item_id, exc)
 
                 if len(row.keys()) <= 3:
                     continue

@@ -35,6 +35,12 @@ FX_API_URL = os.getenv("FX_API_URL")
 BURST = int(os.getenv("BURST", "10"))
 _bucket = TokenBucket(RATE_PER_SEC, BURST)
 
+# =========================
+# Grading kill switch
+# =========================
+# True = nessuna richiesta a 'SecondaryProvider' blocco grading.
+DISABLE_GRADING = True
+
 def now_rome() -> datetime:
     return datetime.now(ROME)
 
@@ -124,6 +130,8 @@ def main() -> int:
 
     logger.info("=== Start Ingestor ===")
     logger.info("Execution fingerprint: %s", run_fingerprint)
+    if DISABLE_GRADING:
+        logger.warning("Grading is DISABLED (DISABLE_GRADING=True)")
 
     GAME = os.getenv("GAME") or "N/A"
     send_email(
@@ -303,6 +311,10 @@ def main() -> int:
                 card_variant = str(doc.get("variant") or "").strip()
                 external_uri = (doc.get(EXTERNAL_URI_FIELD) or "") or None
                 external_id = doc.get(EXTERNAL_ID_FIELD)
+                if DISABLE_GRADING:
+                    # senza uri ne' id il provider secondario non contatta grading provider
+                    external_uri = None
+                    external_id = None
                 cm_id = doc.get(CM_ID_FIELD)
 
                 # Documento base
@@ -541,6 +553,8 @@ def main() -> int:
     summary = f"Inserted: {inserted} / Scanned: {total} / Skipped (already priced today): {skipped_today}"
     logger.info(summary)
     pc_debug = secondary.pricecharting_debug_summary() if hasattr(secondary, "pricecharting_debug_summary") else ""
+    if DISABLE_GRADING:
+        pc_debug = "Grading: DISABLED (DISABLE_GRADING=True)"
     if pc_debug:
         logger.info("[DEBUG] %s", pc_debug)
     body = (
