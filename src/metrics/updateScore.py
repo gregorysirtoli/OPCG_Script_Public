@@ -109,14 +109,25 @@ def unwrap_details(details_json: dict[str, Any]) -> dict[str, Any]:
     return details_json
 
 
-def fetch_score(product_id: int) -> Optional[Any]:
+def fetch_card_updates(product_id: int) -> dict[str, Any]:
     details_json = get_card_details(product_id)
     if not details_json:
-        return None
+        return {}
     details = unwrap_details(details_json)
     if not isinstance(details, dict) or not details:
-        return None
-    return details.get("score")
+        return {}
+    updates: dict[str, Any] = {}
+    score = details.get("score")
+    if score is not None:
+        updates["score"] = score
+    illustrator = details.get("illustrator")
+    if isinstance(illustrator, str) and illustrator.strip():
+        updates["illustrator"] = illustrator.strip()
+    return updates
+
+
+def fetch_score(product_id: int) -> Optional[Any]:
+    return fetch_card_updates(product_id).get("score")
 
 
 def update_scores(cards_col: Any, tcg_player_ids: list[int], workers: int) -> tuple[int, int, int]:
@@ -125,26 +136,28 @@ def update_scores(cards_col: Any, tcg_player_ids: list[int], workers: int) -> tu
     failures = 0
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        future_map = {executor.submit(fetch_score, pid): pid for pid in tcg_player_ids}
+        future_map = {executor.submit(fetch_card_updates, pid): pid for pid in tcg_player_ids}
 
         for future in as_completed(future_map):
             product_id = future_map[future]
             try:
-                score = future.result()
+                updates = future.result()
             except Exception as exc:
                 failures += 1
                 print(f"[UPDATE-SCORE] tcgPlayerId={product_id} error: {exc}")
                 continue
 
-            if score is None:
+            if not updates:
                 continue
 
-            # Base phase: write API score to all rows sharing tcgPlayerId.
+            query: dict[str, Any] = {"tcgPlayerId": product_id}
+            if "score" not in updates:
+                query["illustrator"] = {"$ne": updates["illustrator"]}
             result = cards_col.update_many(
-                {"tcgPlayerId": product_id},
+                query,
                 {
                     "$set": {
-                        "score": score,
+                        **updates,
                         "updatedAt": datetime.now(UTC),
                     }
                 },
@@ -263,7 +276,7 @@ def sync_related_scores(cards_col: Any) -> dict[str, int]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Update only score in Cards from TCGPlayer details API")
+    parser = argparse.ArgumentParser(description="Update score and illustrator in Cards from TCGPlayer details API")
     parser.add_argument("--workers", type=int, default=8, help="Parallel workers for details API calls")
     args = parser.parse_args()
     game = os.getenv("GAME") or "N/A"
@@ -292,7 +305,7 @@ def main() -> None:
 
         print(
             "[UPDATE-SCORE] API phase completed "
-            f"| tcgPlayerIds_with_score={touched_ids} "
+            f"| tcgPlayerIds_with_updates={touched_ids} "
             f"| modified_docs={updated_docs} "
             f"| failures={failures}"
         )
