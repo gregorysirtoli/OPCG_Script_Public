@@ -706,6 +706,36 @@ def _effective_price_from_snapshot(doc: Optional[Dict[str, Any]]) -> Optional[fl
     return _compute_price_redline(doc)
 
 
+def _median_redline_window(prices: List[Dict[str, Any]], now: datetime, days: int) -> Optional[float]:
+    """Mediana di priceRedLine delle righe degli ultimi `days` giorni fino a `now` (None se non ce ne sono)."""
+    since = now - timedelta(days=days)
+    values = []
+    for snap in prices:
+        created_at = _parse_created_at(snap)
+        if created_at is None or created_at < since or created_at > now:
+            continue
+        px = _compute_price_redline(snap)
+        if px is not None and px > 0:
+            values.append(px)
+    return _round2(median(values)) if values else None
+
+
+def _carry_forward_pricecharting(snaps_desc: List[Dict[str, Any]]) -> None:
+    """
+    Le righe senza pricePriceCharting (rotazione o blocco dello scraping) prendono l'ultimo
+    valore tracciato prima di loro. Senza, la mediana di priceRedLine cambia composizione da
+    un giorno all'altro e falsa le variazioni % anche a prezzi fermi.
+    snaps_desc: righe di una sola carta, ordinate per createdAt discendente. Modifica in place.
+    """
+    last_value: Any = None
+    for doc in reversed(snaps_desc):
+        value = doc.get("pricePriceCharting")
+        if _to_positive_number(value) is not None:
+            last_value = value
+        elif last_value is not None:
+            doc["pricePriceCharting"] = last_value
+
+
 def _extract_latest_and_previous_numeric(
     docs: List[Dict[str, Any]],
     field: str,
@@ -989,6 +1019,17 @@ def _compute_sales_estimate(
     return int(round(total_units))
 
 
+# Set di carte promo / da evento / da torneo, mai ristampate (EVENT_RUNNER).
+EVENT_SET_IDS = ("OPP", "OPPJP", "OPPR", "JP", "OP03P")
+# Carte degli eventi di lancio (OP10RE, ...) e dei tornei di anniversario (OP05ANN, ...),
+# compresi i set futuri con la stessa sigla.
+EVENT_SET_PATTERN = re.compile(r"^OP\d+(RE|ANN|PRE)$")
+
+
+def _is_event_set(set_id_norm: str) -> bool:
+    return set_id_norm in EVENT_SET_IDS or bool(EVENT_SET_PATTERN.match(set_id_norm))
+
+
 def _classify_buy_tier(
     set_id: Optional[str],
     price_band_key: str,
@@ -1005,7 +1046,9 @@ def _classify_buy_tier(
     p7 = pct7 if pct7 is not None else 0.0
     p30 = pct30 if pct30 is not None else 0.0
     p90 = pct90 if pct90 is not None else 0.0
-    spread = spread_pct if spread_pct is not None else 999.0
+    # Spread negativo (cmPriceLow sopra cmPriceTrend) = dato non affidabile: come se mancasse,
+    # cosi' non passa i limiti massimi di spread.
+    spread = spread_pct if spread_pct is not None and spread_pct >= 0 else 999.0
     l7 = listings_pct7 if listings_pct7 is not None else 0.0
     l30 = listings_pct30 if listings_pct30 is not None else 0.0
     set_id_norm = (set_id or "").strip().upper()
@@ -1053,7 +1096,7 @@ def _classify_buy_tier(
         tier_key = "PREMIUM_CLIMB"
     elif (
         not tier_key
-        and set_id_norm in ("OPP", "OPPJP")
+        and _is_event_set(set_id_norm)
         and
         p7 >= 4.0
         and p30 >= 10.0
@@ -1358,7 +1401,7 @@ def compute_market_data_for_item(
     )
 
     listings_pct7, listings_pct30 = _compute_listing_pct_changes(prices, now)
-    price_band = _classify_price_band(price_30d, s.price_now_usd)
+    price_band = _classify_price_band(_median_redline_window(prices, now, days=30), s.price_now_usd)
     price_position = _compute_price_position(s.price_now_usd, prices)
     buy_tier = _classify_buy_tier(
         set_id=graded_first.get("setId"),
@@ -2126,6 +2169,11 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
             },
         ).sort("createdAt", -1))
         attach_graded(db, sealed_docs, sealed_query, fields=("priceUngraded", "pricePriceCharting"))
+        sealed_by_item: Dict[str, List[Dict[str, Any]]] = {}
+        for doc in sealed_docs:
+            sealed_by_item.setdefault(doc.get("itemId"), []).append(doc)
+        for item_docs in sealed_by_item.values():
+            _carry_forward_pricecharting(item_docs)
         for doc in sealed_docs:
             item_id = doc.get("itemId")
             if isinstance(item_id, str) and item_id not in sealed_latest:
@@ -2321,6 +2369,7 @@ def update_cards_market_data(
             key=lambda doc: doc.get("createdAt") or datetime.min.replace(tzinfo=timezone.utc),
             reverse=True,
         )
+        _carry_forward_pricecharting(snaps)
 
     # graded first (psa10/bsg10) - $first on createdAt desc
     graded_first: Dict[str, Dict[str, Any]] = {}
