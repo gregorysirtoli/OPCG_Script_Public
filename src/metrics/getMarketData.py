@@ -1046,10 +1046,9 @@ def _classify_buy_tier(
     p7 = pct7 if pct7 is not None else 0.0
     p30 = pct30 if pct30 is not None else 0.0
     p90 = pct90 if pct90 is not None else 0.0
-    # Spread negativo (cmPriceLow sopra cmPriceTrend) = dato non affidabile: come se mancasse,
-    # cosi' non passa i limiti massimi di spread.
-    spread = spread_pct if spread_pct is not None and spread_pct >= 0 else 999.0
-    l7 = listings_pct7 if listings_pct7 is not None else 0.0
+    # spread_pct non entra piu' nei tier: cmPriceLow/cmPriceTrend mancano o sono incoerenti
+    # (low sopra il trend) su circa meta' delle carte da $200+. Resta in firma per i chiamanti.
+    l7 =listings_pct7 if listings_pct7 is not None else 0.0
     l30 = listings_pct30 if listings_pct30 is not None else 0.0
     set_id_norm = (set_id or "").strip().upper()
 
@@ -1070,7 +1069,6 @@ def _classify_buy_tier(
         and p30 >= 8.0
         and p30 <= 40.0
         and p1 > -4.0
-        and spread <= 22.0
     ):
         tier_key = "HIGH_CONVICTION"
     elif (
@@ -1091,7 +1089,6 @@ def _classify_buy_tier(
         and p30 >= 5.0
         and p30 <= 20.0
         and abs(p1) <= 5.0
-        and spread <= 18.0
     ):
         tier_key = "PREMIUM_CLIMB"
     elif (
