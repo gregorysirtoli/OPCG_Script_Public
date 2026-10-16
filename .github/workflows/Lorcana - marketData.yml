@@ -33,7 +33,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install deps
-        run: python -m pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r src/prediction/requirements.txt
 
       - name: Run MarketData enrichment
         run: python -m src.ingest.marketData
@@ -49,3 +52,23 @@ jobs:
       - name: Run update score script
         run: |
           python -m src.metrics.updateScore
+
+      # ===== Prediction (ex "Lorcana - Prediction Daily") =====
+      - name: Restore trained artifacts
+        uses: actions/cache@v4
+        with:
+          path: artifacts
+          key: optcg-artifacts-lorcana-${{ github.run_id }}
+          restore-keys: |
+            optcg-artifacts-lorcana-
+
+      - name: Ensure model artifacts exist
+        run: |
+          if [ ! -f artifacts/optcg_quantile_artifacts.joblib ]; then
+            echo "Missing artifacts/optcg_quantile_artifacts.joblib. Run mlTrain workflow first."
+            exit 1
+          fi
+
+      - name: Run daily predictions
+        run: |
+          python -m src.prediction.run_predict

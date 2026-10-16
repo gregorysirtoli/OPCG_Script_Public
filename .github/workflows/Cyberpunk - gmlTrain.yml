@@ -1,42 +1,35 @@
-﻿name: Lorcana - Prediction Daily
+﻿name: Cyberpunk - Prediction Training
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 11 * * *"
+    - cron: "0 5 * * 1"
 
 jobs:
-  predict-and-store:
+  train-models:
     runs-on: ubuntu-24.04
 
     env:
       PYTHONUNBUFFERED: "1"
-      MONGODB_URI: ${{ secrets.MONGODB_URI_LORCANA }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB_LORCANA }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_CYBERPUNK }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_CYBERPUNK }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
-      GAME: "LORCANA"
+      GAME: "CYBERPUNK"
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Restore trained artifacts
+      - name: Cache trained artifacts
         uses: actions/cache@v4
         with:
           path: artifacts
-          key: optcg-artifacts-lorcana-${{ github.run_id }}
+          key: optcg-artifacts-cyberpunk-${{ github.run_id }}
           restore-keys: |
-            optcg-artifacts-lorcana-
-
-      - name: Ensure model artifacts exist
-        run: |
-          if [ ! -f artifacts/optcg_quantile_artifacts.joblib ]; then
-            echo "Missing artifacts/optcg_quantile_artifacts.joblib. Run mlTrain workflow first."
-            exit 1
-          fi
+            optcg-artifacts-cyberpunk-
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -49,6 +42,6 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r src/prediction/requirements.txt
 
-      - name: Run daily predictions
+      - name: Train prediction models
         run: |
-          python -m src.prediction.run_predict
+          python -m src.prediction.run_train
