@@ -123,6 +123,15 @@ def train_all(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConf
     ).dropna(subset=["id"])
     log_step(f"merge cards rows={len(train_df):,}")
 
+    if train_df.empty:
+        raise RuntimeError(
+            "Nessuna riga di addestramento: servono carte con almeno "
+            f"{ml.min_history_days} giorni di storico prezzi piu' {ml.horizon_days} giorni per il "
+            f"rendimento futuro (circa {ml.min_history_days + ml.horizon_days} giorni in tutto). "
+            f"Dati caricati: {len(cards):,} carte, {len(prices):,} righe di prezzo. "
+            "Rilanciare l'addestramento quando lo storico e' sufficiente."
+        )
+
     cluster_source = cards_p[["id", *cluster_cols]].dropna(subset=["id"]).drop_duplicates(subset=["id"]).copy()
     cluster_pipe, cluster_ids = fit_clusters(
         cluster_source[cluster_cols].copy(), cat_cols=cat_cols, num_cols=static_num_cols, n_clusters=ml.n_clusters
