@@ -63,6 +63,69 @@ def _requested_fields(fields: Optional[Iterable[str]]) -> List[str]:
     return [f for f in (fields or PRICECHARTING_FIELDS) if f in PRICECHARTING_FIELDS]
 
 
+def _day_key(item_id: Any, created_at: Any) -> Optional[tuple]:
+    if item_id is None or not hasattr(created_at, "date"):
+        return None
+    return (item_id, created_at.date())
+
+
+def _seconds_apart(a: Any, b: Any) -> float:
+    try:
+        return abs((a - b).total_seconds())
+    except Exception:
+        return float("inf")
+
+
+def _match_graded(
+    prices_rows: List[Dict[str, Any]],
+    graded_rows: List[Dict[str, Any]],
+    default_item_id: Any = None,
+) -> Dict[Any, Dict[str, Any]]:
+    """
+    Abbina le righe di PricesGraded alle righe di Prices; restituisce {_id riga Prices: riga graded}.
+    1. stesso _id (righe scritte dall'ingest insieme alla riga di Prices);
+    2. per le righe graded senza riga di Prices con lo stesso _id (scritte da altri script):
+       la riga di Prices della stessa carta nello stesso giorno (UTC) con createdAt piu' vicino,
+       se quella riga non ha gia' la sua riga graded per _id. Con piu' righe graded nello stesso
+       giorno vince la piu' recente.
+    prices_rows: dict con _id, createdAt e itemId (se manca si usa default_item_id).
+    """
+    prices_ids = {row["_id"] for row in prices_rows if "_id" in row}
+    matched: Dict[Any, Dict[str, Any]] = {}
+    unlinked: List[Dict[str, Any]] = []
+    for graded in graded_rows:
+        if graded.get("_id") in prices_ids:
+            matched[graded["_id"]] = graded
+        else:
+            unlinked.append(graded)
+    if not unlinked:
+        return matched
+
+    by_day: Dict[tuple, List[Dict[str, Any]]] = {}
+    for row in prices_rows:
+        if "_id" not in row or row["_id"] in matched:
+            continue
+        key = _day_key(row.get("itemId", default_item_id), row.get("createdAt"))
+        if key is not None:
+            by_day.setdefault(key, []).append(row)
+
+    fallback: Dict[Any, Dict[str, Any]] = {}
+    for graded in sorted(unlinked, key=lambda g: (g.get("createdAt") is None, g.get("createdAt"))):
+        candidates = by_day.get(_day_key(graded.get("itemId"), graded.get("createdAt")))
+        if not candidates:
+            continue
+        target = min(candidates, key=lambda row: _seconds_apart(row.get("createdAt"), graded.get("createdAt")))
+        fallback[target["_id"]] = graded  # in ordine di createdAt: la piu' recente sovrascrive
+    matched.update(fallback)
+    return matched
+
+
+def _load_graded(db: Database, query: Dict[str, Any], wanted: List[str]) -> List[Dict[str, Any]]:
+    projection = {field: 1 for field in wanted}
+    projection.update({"itemId": 1, "createdAt": 1})
+    return list(db[PRICES_GRADED_COLLECTION].find(query, projection))
+
+
 def attach_graded(
     db: Database,
     docs: List[Dict[str, Any]],
@@ -70,9 +133,10 @@ def attach_graded(
     fields: Optional[Iterable[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Riattacca ai documenti di Prices (letti con `query`) i campi PriceCharting di PricesGraded.
-    `query` e' lo stesso filtro usato su Prices (itemId/createdAt): su PricesGraded usa
-    l'indice metaField+timeField. I documenti devono contenere _id. Modifica docs in place.
+    Riattacca ai documenti di Prices (letti con `query`) i campi PriceCharting di PricesGraded
+    (abbinamento: vedi _match_graded). `query` e' lo stesso filtro usato su Prices
+    (itemId/createdAt): su PricesGraded usa l'indice metaField+timeField.
+    I documenti devono contenere _id e createdAt. Modifica docs in place.
     """
     wanted = _requested_fields(fields)
     if not docs or not wanted:
@@ -80,11 +144,9 @@ def attach_graded(
     by_id = {doc["_id"]: doc for doc in docs if "_id" in doc}
     if not by_id:
         return docs
-    projection = {field: 1 for field in wanted}
-    for graded in db[PRICES_GRADED_COLLECTION].find(query, projection):
-        doc = by_id.get(graded.get("_id"))
-        if doc is None:
-            continue
+    default_item_id = query.get("itemId") if isinstance(query.get("itemId"), str) else None
+    for prices_id, graded in _match_graded(docs, _load_graded(db, query, wanted), default_item_id).items():
+        doc = by_id[prices_id]
         for field in wanted:
             if field in graded:
                 doc[field] = graded[field]
@@ -92,21 +154,25 @@ def attach_graded(
 
 
 def attach_graded_df(db: Database, prices_df, query: Dict[str, Any], fields: Optional[Iterable[str]] = None):
-    """Come attach_graded, per un DataFrame di Prices con la colonna _id."""
+    """Come attach_graded, per un DataFrame di Prices con le colonne _id, itemId e createdAt."""
     import pandas as pd
 
     wanted = _requested_fields(fields)
     if prices_df.empty or "_id" not in prices_df.columns or not wanted:
         return prices_df
-    graded = pd.DataFrame(list(db[PRICES_GRADED_COLLECTION].find(query, {field: 1 for field in wanted})))
-    if graded.empty:
+    graded_rows = _load_graded(db, query, wanted)
+    if not graded_rows:
         return prices_df
-    graded = graded.drop_duplicates(subset="_id", keep="last").set_index("_id")
+    link_cols = [c for c in ("_id", "itemId", "createdAt") if c in prices_df.columns]
+    prices_rows = prices_df[link_cols].to_dict("records")
+    for row in prices_rows:
+        if "createdAt" in row and hasattr(row["createdAt"], "to_pydatetime"):
+            row["createdAt"] = row["createdAt"].to_pydatetime()
+    matched = _match_graded(prices_rows, graded_rows)
+    if not matched:
+        return prices_df
     out = prices_df.copy()
-    keys = out["_id"]
     for field in wanted:
-        if field not in graded.columns:
-            continue
-        values = keys.map(graded[field])
+        values = out["_id"].map({pid: g.get(field) for pid, g in matched.items() if field in g})
         out[field] = values.combine_first(out[field]) if field in out.columns else values
     return out
