@@ -13,20 +13,21 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -> dict[str, Any]:
+def generate_tierlist_post(mongo_uri: str, db_name: str, tierlist_id: str | None = None) -> dict[str, Any]:
     from private_providers.instagram import generateTierlist as tierlist_gen
     DEBUG_LOCAL_ONLY = os.getenv("DEBUG_LOCAL_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
+    # DEBUG_LOCAL_ONLY = "1"  # always run in local-only mode for debugging
+    tierlist_id = tierlist_gen.resolve_tierlist_id(tierlist_id)
 
     print(f"[Orchestrator] Starting tierlist generation workflow")
-    print(f"[Orchestrator] MongoDB URI: {mongo_uri}")
     print(f"[Orchestrator] Database: {db_name}")
-    print(f"[Orchestrator] Language: {language}")
+    print(f"[Orchestrator] Tierlist _id: {tierlist_id}")
     print("[Orchestrator] Provider module: private_providers.instagram.generateTierlist")
     print(f"[Orchestrator] DEBUG_LOCAL_ONLY: {DEBUG_LOCAL_ONLY}")
-    print(f"[Orchestrator] Fetching latest tierlist from MongoDB...")
+    print(f"[Orchestrator] Fetching tierlist from MongoDB...")
     try:
-        tierlist_doc = tierlist_gen.fetch_latest_tierlist(mongo_uri, db_name, language=language)
-        print(f"[Orchestrator] ✓ Tierlist fetched: {tierlist_doc.get('_id')}")
+        tierlist_doc = tierlist_gen.fetch_tierlist(mongo_uri, db_name, tierlist_id)
+        print(f"[Orchestrator] ✓ Tierlist fetched: {tierlist_doc.get('_id')} ({tierlist_doc.get('label')})")
     except Exception as e:
         print(f"[Orchestrator] ✗ Failed to fetch tierlist: {e}")
         raise
@@ -47,7 +48,7 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
         print(f"[Orchestrator] ✗ Failed to generate caption: {e}")
         raise
 
-    month_year = tierlist_gen.format_month_year(tierlist_doc.get("date"))
+    month_year = tierlist_gen.format_month_year(tierlist_gen.tierlist_date(tierlist_doc))
 
     print(f"[Orchestrator] Building manifest payload...")
     content = {
@@ -74,8 +75,8 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, language: str = "en") -
         "source": {
             "collection": tierlist_gen.MONGODB_TIERLIST_COLLECTION,
             "tierlist_id": str(tierlist_doc.get("_id")),
-            "language": tierlist_doc.get("language"),
-            "date": tierlist_doc.get("date"),
+            "label": tierlist_doc.get("label"),
+            "date": tierlist_gen.tierlist_date(tierlist_doc),
         },
         "content": content,
         "local": {
@@ -155,20 +156,27 @@ if __name__ == "__main__":
 
     start_time = time.time()
     start_dt = datetime.now()
+    # in locale (DEBUG_LOCAL_ONLY) solo file su disco: niente mail
+    local_only = os.getenv("DEBUG_LOCAL_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
-        mongo_uri = os.getenv("MONGODB_URI")
-        db_name = os.getenv("MONGODB_DB")
+        # su GitHub MONGODB_URI/MONGODB_DB; in locale anche le variabili di One Piece di .env.local
+        mongo_uri = os.getenv("MONGODB_URI") or os.getenv("MONGODB_URI_ONEPIECE")
+        db_name = os.getenv("MONGODB_DB") or os.getenv("MONGODB_DB_ONEPIECE")
 
         if not mongo_uri or not db_name:
-            raise RuntimeError("MONGODB_URI and MONGODB_DB environment variables required")
+            raise RuntimeError("MONGODB_URI/MONGODB_DB (or MONGODB_URI_ONEPIECE/MONGODB_DB_ONEPIECE) required")
 
         result = generate_tierlist_post(mongo_uri, db_name)
         print("\nFinal Result:")
         print(f"  Layout: {result['layout_version']}")
+        if result["local_only"]:
+            print(f"  Local slides: {(result['local'] or {}).get('slides')}")
+            print(f"  Caption: {(result['local'] or {}).get('caption_path')}")
+            sys.exit(0)
         print(f"  GCS Bucket: {result['gcs_bucket']}")
         print(f"  Uploaded Images: {len(result['storage_images'])}")
-        print(f"  MongoDB ID: {result['mongodb']['insertedId']}")
+        print(f"  MongoDB ID: {(result['mongodb'] or {}).get('insertedId')}")
 
         end_time = time.time()
         end_dt = datetime.now()
@@ -184,6 +192,7 @@ if __name__ == "__main__":
         )
         send_email(subject, body)
     except Exception as e:
-        send_email("🚫 [1/1][INSTAGRAM] Tierlist generation failed", traceback.format_exc())
+        if not local_only:
+            send_email("🚫 [1/1][INSTAGRAM] Tierlist generation failed", traceback.format_exc())
         print(f"\nFatal Error: {e}", file=sys.stderr)
         sys.exit(1)

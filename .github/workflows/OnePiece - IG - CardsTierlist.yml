@@ -1,4 +1,4 @@
-name: IG - Tierlist (cards)
+name: OnePiece - IG - Tierlist (cards)
 
 on:
   workflow_dispatch:
@@ -11,8 +11,8 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: "1"
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_ONEPIECE }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
       AI_GATEWAY_BASE_URL: ${{ secrets.AI_GATEWAY_BASE_URL }}

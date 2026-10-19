@@ -19,10 +19,14 @@ def generate_cards_tierlist_post() -> None:
     print("[Orchestrator] Starting cards tierlist generation workflow")
     print("[Orchestrator] Provider module: private_providers.instagram.generateCardsTierlist")
 
-    mongo_uri = os.getenv("MONGODB_URI")
-    db_name = os.getenv("MONGODB_DB")
+    # su GitHub MONGODB_URI/MONGODB_DB; in locale anche le variabili di One Piece di .env.local
+    # (il provider legge MONGODB_URI/MONGODB_DB, quindi si impostano quelle)
+    mongo_uri = os.getenv("MONGODB_URI") or os.getenv("MONGODB_URI_ONEPIECE")
+    db_name = os.getenv("MONGODB_DB") or os.getenv("MONGODB_DB_ONEPIECE")
     if not mongo_uri or not db_name:
-        raise RuntimeError("MONGODB_URI and MONGODB_DB environment variables required")
+        raise RuntimeError("MONGODB_URI/MONGODB_DB (or MONGODB_URI_ONEPIECE/MONGODB_DB_ONEPIECE) required")
+    os.environ["MONGODB_URI"] = mongo_uri
+    os.environ["MONGODB_DB"] = db_name
 
     print(f"[Orchestrator] MongoDB DB: {db_name}")
     print("[Orchestrator] Delegating to provider main()")
@@ -39,9 +43,13 @@ if __name__ == "__main__":
 
     start_time = time.time()
     start_dt = datetime.now()
+    # in locale (DEBUG_LOCAL_ONLY) solo file su disco: niente mail
+    local_only = os.getenv("DEBUG_LOCAL_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
         generate_cards_tierlist_post()
+        if local_only:
+            sys.exit(0)
 
         end_time = time.time()
         end_dt = datetime.now()
@@ -57,6 +65,7 @@ if __name__ == "__main__":
         )
         send_email(subject, body)
     except Exception as e:
-        send_email("🚫 [1/1][INSTAGRAM] Cards tierlist generation failed", traceback.format_exc())
+        if not local_only:
+            send_email("🚫 [1/1][INSTAGRAM] Cards tierlist generation failed", traceback.format_exc())
         print(f"\nFatal Error: {e}", file=sys.stderr)
         sys.exit(1)
