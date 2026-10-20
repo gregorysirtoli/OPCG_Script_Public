@@ -1,4 +1,4 @@
-name: IG - Market Insight
+name: OnePiece - IG - Market Insight
 
 on:
   workflow_dispatch:

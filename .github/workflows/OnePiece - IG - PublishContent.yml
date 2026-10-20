@@ -1,4 +1,4 @@
-name: IG - Publish Content
+name: OnePiece - IG - Publish Content
 
 on:
   workflow_dispatch:

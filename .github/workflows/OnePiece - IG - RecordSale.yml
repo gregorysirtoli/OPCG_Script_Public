@@ -1,4 +1,4 @@
-name: IG - Record Sale
+name: OnePiece - IG - Record Sale
 
 on:
   workflow_dispatch:

@@ -1,4 +1,4 @@
-name: IG - Top Drop Generation
+name: OnePiece - IG - Top Drop Generation
 
 on:
   workflow_dispatch:

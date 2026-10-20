@@ -1,4 +1,4 @@
-name: IG - Top Mover Generation
+name: OnePiece - IG - Top Mover Generation
 
 on:
   workflow_dispatch:
