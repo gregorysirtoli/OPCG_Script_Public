@@ -1,12 +1,12 @@
-name: IG - Big Pump Generation
+name: IG - Top Drop Generation
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 14 * * 1"
+    - cron: "0 14 * * 5"
 
 jobs:
-  generate-big-pump:
+  generate-big-dump:
     runs-on: ubuntu-24.04
 
     env:
@@ -42,6 +42,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Generate Big Pump Post
+      - name: Generate Top Drop Post
         run: |
-          python -m src.instagram.big_pump
+          python -m src.instagram.big_movement --movement dump

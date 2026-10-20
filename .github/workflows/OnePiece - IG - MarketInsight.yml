@@ -1,18 +1,18 @@
-name: IG - Big Dump Generation
+name: IG - Market Insight
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 14 * * 5"
+    - cron: "0 17 * * 3"
 
 jobs:
-  generate-big-dump:
+  generate-market-insight:
     runs-on: ubuntu-24.04
 
     env:
       PYTHONUNBUFFERED: "1"
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_ONEPIECE }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
       INSTAGRAM_POST_INITIAL_STATUS: draft
@@ -42,6 +42,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Generate Big Dump Post
+      - name: Generate Market Insight Post
         run: |
-          python -m src.instagram.big_dump
+          python -m src.instagram.market_insight
