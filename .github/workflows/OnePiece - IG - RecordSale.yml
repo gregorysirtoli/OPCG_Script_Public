@@ -3,7 +3,7 @@ name: IG - Record Sale
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 17 * * 5"
+    - cron: "0 21 * * 0"
 
 jobs:
   generate-record-sale:
@@ -11,10 +11,10 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: "1"
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB }}
-      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI }}
-      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_ONEPIECE }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
+      MONGODB_SALES_URI: ${{ secrets.MONGODB_SALES_URI_ONEPIECE }}
+      MONGODB_SALES_DB: ${{ secrets.MONGODB_SALES_DB_ONEPIECE }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
       INSTAGRAM_POST_INITIAL_STATUS: draft

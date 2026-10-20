@@ -11,8 +11,8 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: "1"
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI_ONEPIECE }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
       INSTAGRAM_IG_USER_ID: ${{ secrets.INSTAGRAM_IG_USER_ID }}
       INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
 

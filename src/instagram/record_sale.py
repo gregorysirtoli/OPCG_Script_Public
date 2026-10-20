@@ -19,10 +19,23 @@ def generate_record_sale_post() -> None:
     print("[Orchestrator] Starting record sale generation workflow")
     print("[Orchestrator] Provider module: private_providers.instagram.generateRecordSale")
 
-    mongo_uri = os.getenv("MONGODB_URI")
-    db_name = os.getenv("MONGODB_DB")
+    # su GitHub MONGODB_URI/MONGODB_DB (+ MONGODB_SALES_*); in locale anche le variabili di One Piece
+    # di .env.local. Il provider legge MONGODB_URI/MONGODB_DB/MONGODB_SALES_*, quindi si impostano quelle.
+    use_onepiece_env = not (os.getenv("MONGODB_URI") and os.getenv("MONGODB_DB"))
+    if use_onepiece_env:
+        mongo_uri, db_name = os.getenv("MONGODB_URI_ONEPIECE"), os.getenv("MONGODB_DB_ONEPIECE")
+        sales_uri, sales_db = os.getenv("MONGODB_SALES_URI_ONEPIECE"), os.getenv("MONGODB_SALES_DB_ONEPIECE")
+    else:
+        mongo_uri, db_name = os.getenv("MONGODB_URI"), os.getenv("MONGODB_DB")
+        sales_uri, sales_db = os.getenv("MONGODB_SALES_URI"), os.getenv("MONGODB_SALES_DB")
     if not mongo_uri or not db_name:
-        raise RuntimeError("MONGODB_URI and MONGODB_DB environment variables required")
+        raise RuntimeError("MONGODB_URI/MONGODB_DB (or MONGODB_URI_ONEPIECE/MONGODB_DB_ONEPIECE) required")
+    os.environ["MONGODB_URI"] = mongo_uri
+    os.environ["MONGODB_DB"] = db_name
+    print(f"[Orchestrator] Sales DB: {sales_db or db_name}")
+    if sales_uri and sales_db:
+        os.environ["MONGODB_SALES_URI"] = sales_uri
+        os.environ["MONGODB_SALES_DB"] = sales_db
 
     print(f"[Orchestrator] MongoDB DB: {db_name}")
     print("[Orchestrator] Delegating to provider main()")
@@ -39,9 +52,13 @@ if __name__ == "__main__":
 
     start_time = time.time()
     start_dt = datetime.now()
+    # in locale (DEBUG_LOCAL_ONLY) solo file su disco: niente mail
+    local_only = os.getenv("DEBUG_LOCAL_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
         generate_record_sale_post()
+        if local_only:
+            sys.exit(0)
 
         end_time = time.time()
         end_dt = datetime.now()
@@ -57,6 +74,7 @@ if __name__ == "__main__":
         )
         send_email(subject, body)
     except Exception as e:
-        send_email("🚫 [1/1][INSTAGRAM] Record sale generation failed", traceback.format_exc())
+        if not local_only:
+            send_email("🚫 [1/1][INSTAGRAM] Record sale generation failed", traceback.format_exc())
         print(f"\nFatal Error: {e}", file=sys.stderr)
         sys.exit(1)
