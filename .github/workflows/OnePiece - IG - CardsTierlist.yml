@@ -3,7 +3,7 @@ name: OnePiece - IG - Tierlist (cards)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 13 * * 2,5"
+    - cron: "0 15 * * 2,6"
 
 jobs:
   generate-cards-tierlist:

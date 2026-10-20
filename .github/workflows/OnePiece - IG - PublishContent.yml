@@ -2,8 +2,9 @@ name: IG - Publish Content
 
 on:
   workflow_dispatch:
-  #schedule:
-  #  - cron: "0 17 * * *"
+  schedule:
+    # pubblica 1 bozza al giorno alle 17:00 UTC (i post vengono generati alle 15:00 UTC)
+    - cron: "0 17 * * *"
 
 jobs:
   publish-content:

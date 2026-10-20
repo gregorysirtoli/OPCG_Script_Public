@@ -2,8 +2,14 @@ name: OnePiece - IG - Tierlist
 
 on:
   workflow_dispatch:
+    inputs:
+      tierlist_id:
+        description: "_id della tierlist (vuoto = automatico: mesi dispari EN, mesi pari JP)"
+        required: false
+        default: ""
   schedule:
-    - cron: "0 9 1 * *"
+    # ogni giovedi': lo step "Select tierlist" lascia proseguire solo il primo giovedi' del mese
+    - cron: "0 15 * * 4"
 
 jobs:
   generate-tierlist:
@@ -15,9 +21,9 @@ jobs:
       MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
-      # _id of the tierlist to generate
-      TIERLIST_ID: 6a9fe876bd29bfbb7e455276
-      # TIERLIST_ID: 6a9ff544bd29bfbb7e455277
+      # _id delle tierlist: mesi dispari EN, mesi pari JP
+      TIERLIST_ID_EN: 6a9fe876bd29bfbb7e455276
+      TIERLIST_ID_JP: 6a9ff544bd29bfbb7e455277
       INSTAGRAM_POST_INITIAL_STATUS: draft
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
@@ -25,10 +31,40 @@ jobs:
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
     steps:
+      - name: Select tierlist (first Thursday of the month, EN/JP by month)
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TIERLIST_ID: ${{ github.event.inputs.tierlist_id }}
+        run: |
+          day=$(date -u +%-d)
+          month=$(date -u +%-m)
+          if [ "$EVENT_NAME" = "schedule" ] && [ "$day" -gt 7 ]; then
+            echo "Day $day is not the first Thursday of the month: nothing to do"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$INPUT_TIERLIST_ID" ]; then
+            if ! [[ "$INPUT_TIERLIST_ID" =~ ^[0-9a-f]{24}$ ]]; then
+              echo "Invalid tierlist_id: $INPUT_TIERLIST_ID" >&2
+              exit 1
+            fi
+            id="$INPUT_TIERLIST_ID"
+          elif [ $((month % 2)) -eq 1 ]; then
+            id="$TIERLIST_ID_EN"
+          else
+            id="$TIERLIST_ID_JP"
+          fi
+          echo "Month $month -> TIERLIST_ID=$id"
+          echo "TIERLIST_ID=$id" >> "$GITHUB_ENV"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repo
+        if: steps.plan.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Checkout private providers repo
+        if: steps.plan.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: gregorysirtoli/OPCG_Script_Private
@@ -36,15 +72,18 @@ jobs:
           path: private_providers
 
       - name: Setup Python
+        if: steps.plan.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
+        if: steps.plan.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
       - name: Generate Tierlist
+        if: steps.plan.outputs.run == 'true'
         run: |
           python -m src.instagram.tierlist
