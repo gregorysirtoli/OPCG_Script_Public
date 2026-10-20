@@ -18,6 +18,8 @@ jobs:
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      PUSH_NOTIFY_SECRET: ${{ secrets.PUSH_NOTIFY_SECRET }}
+      PUSH_NOTIFY_URL: ${{ secrets.PUSH_NOTIFY_URL }}
       GAME: "ONE PIECE"
 
     steps:
