@@ -40,6 +40,8 @@ if __name__ == "__main__":
             days_back=477,
             limit_ids=ids,
             sales_db=sales_db,
+            # Track record attivo solo dove il workflow lo chiede (oggi solo One Piece).
+            track_record=os.getenv("TRACK_RECORD_ENABLED") == "1",
         )
         print(f"Cards: {touched}, updated: {updated}")
         print(f"Sets: {sets_touched}, updated: {sets_updated}")

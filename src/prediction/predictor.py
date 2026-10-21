@@ -15,6 +15,34 @@ from .features import assign_tier
 from .clustering import predict_clusters
 from .modeling import predict_tier_models
 from .attributes import build_feature_cols
+from src.trackrecord.ledger import TRACK_RECORD_FORECASTS_COLLECTION, insert_append_only
+
+# Giorno della settimana (0 = lunedi') in cui le previsioni entrano nel track record. Una
+# fotografia a settimana: quelle giornaliere avrebbero finestre a 28 giorni quasi identiche.
+FORECAST_SNAPSHOT_WEEKDAY = 0
+
+
+def snapshot_forecasts(db, preds_docs: list[dict], asof: datetime) -> None:
+    if asof.weekday() != FORECAST_SNAPSHOT_WEEKDAY:
+        return
+    day = asof.strftime("%Y-%m-%d")
+    rows = [
+        {
+            "_id": f"{d['cardId']}|{day}",
+            "cardId": d["cardId"],
+            "asOfDay": day,
+            "asOfDate": d["asOfDate"],
+            "modelAsOf": d.get("modelAsOf"),
+            "tier": d["tier"],
+            "priceNow": d["priceNow"],
+            "q20": d["pred_q20_28d"],
+            "q50": d["pred_q50_28d"],
+            "q80": d["pred_q80_28d"],
+        }
+        for d in preds_docs
+    ]
+    inserted = insert_append_only(db[TRACK_RECORD_FORECASTS_COLLECTION], rows)
+    print(f"Track record: {inserted} previsioni registrate per {day}.")
 
 
 def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = MongoConfig(), ml: MLConfig = MLConfig()):
@@ -36,6 +64,8 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
     cat_cols_static, static_num_cols, cluster_cols = build_feature_cols(dyn_cat_keys, dyn_num_keys)
 
     asof = pd.Timestamp(datetime.now(timezone.utc))
+    model_asof = artifacts.get("asof")
+    model_asof = pd.Timestamp(model_asof).to_pydatetime() if model_asof is not None else None
 
     cards = load_collection(db, mongo.col_cards, match={"type": "Cards"})
     sets = load_collection(db, getattr(mongo, "col_sets", "Sets"))
@@ -117,10 +147,12 @@ def predict_and_store(artifacts_dir: str = "./artifacts", mongo: MongoConfig = M
                 "pred_q50_28d": float(r["pred_q50_28d"]),
                 "pred_q80_28d": float(r["pred_q80_28d"]),
                 "lastPriceDate": r["date"].to_pydatetime(),
+                "modelAsOf": model_asof,
             })
 
     if preds_docs:
         upsert_many(db, mongo.col_pred, preds_docs, key_fields=["_id"])
+        snapshot_forecasts(db, preds_docs, asof.to_pydatetime())
 
     if not all_scored_rows:
         print("Nessuna predizione generata (tier vuoti o dati insufficienti).")

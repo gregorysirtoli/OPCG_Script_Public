@@ -12,6 +12,13 @@ from pymongo.database import Database
 from pymongo.errors import ExecutionTimeout
 
 from src.core.prices_graded import attach_graded
+from src.trackrecord.ledger import (
+    TRACK_RECORD_CALLS_COLLECTION,
+    accept_call,
+    build_call_event,
+    insert_append_only,
+    recent_calls_index,
+)
 
 GRADING_FEES = 80
 SET_TREND_DAYS = 90
@@ -2281,7 +2288,9 @@ def update_cards_market_data(
     days_back: int = 400,
     limit_ids: Optional[List[str]] = None,
     sales_db: Optional[Database] = None,
+    track_record: bool = False,
 ) -> Tuple[int, int, int, int]:
+    """track_record=True registra i cambi di stamp e pattern in TrackRecordCalls (solo One Piece)."""
     _sales_db = sales_db if sales_db is not None else db
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
@@ -2511,6 +2520,10 @@ def update_cards_market_data(
     ops: List[UpdateOne] = []
     stamp_snapshot_ops: List[UpdateOne] = []
     stamp_change_ops: List[InsertOne] = []
+    track_record_events: List[Dict[str, Any]] = []
+    recent_calls = (
+        recent_calls_index(db, ids, datetime.now(timezone.utc)) if track_record else {}
+    )
     touched = 0
     updated = 0
     for cid in ids:
@@ -2577,6 +2590,20 @@ def update_cards_market_data(
                     }
                 )
             )
+            # Si verifica solo lo stamp (la chiamata); il pattern attivo resta come contesto
+            # nel campo buyTierAtCall dell'evento.
+            if track_record:
+                event = build_call_event(
+                    item_id=cid,
+                    signal_type="stamp",
+                    from_key=prev_stamp_key,
+                    to_signal=md["stamp"],
+                    called_at=now_utc,
+                    base_card=base_card,
+                    md=md,
+                )
+                if accept_call(recent_calls, event):
+                    track_record_events.append(event)
 
         stamp_snapshot_doc = {
             "itemId": cid,
@@ -2622,6 +2649,8 @@ def update_cards_market_data(
             stamp_change_ops,
             ordered=False,
         )
+    if track_record_events:
+        insert_append_only(db[TRACK_RECORD_CALLS_COLLECTION], track_record_events)
 
     sets_touched, sets_updated = update_sets_market_data(db, affected_set_ids)
     return (touched, updated, sets_touched, sets_updated)

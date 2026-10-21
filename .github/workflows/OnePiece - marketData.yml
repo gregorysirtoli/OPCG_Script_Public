@@ -24,6 +24,7 @@ jobs:
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
       GAME: "ONE PIECE"
       PRIMARY_URL_TEMPLATE: ${{ secrets.PRIMARY_URL_TEMPLATE }}
+      TRACK_RECORD_ENABLED: "1"
 
     steps:
       - uses: actions/checkout@v4

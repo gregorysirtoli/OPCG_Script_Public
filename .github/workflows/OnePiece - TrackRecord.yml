@@ -1,0 +1,63 @@
+name: OnePiece - TrackRecord
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["One Piece - MarketData"]
+    types:
+      - completed
+
+concurrency:
+  group: onepiece-trackrecord
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: 1
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      GAME: "ONE PIECE"
+      TRACKRECORD_DIGEST_FILE: trackrecord-repo/onepiece-digests.csv
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Impronte giornaliere pubbliche in un repository separato: chiunque puo' verificare che il
+      # passato non sia stato riscritto. Il token (fine-grained, Contents: read and write solo su
+      # redline-cards/OPCG-Track-Record) sta nel secret TRACKRECORD_REPO_TOKEN.
+      - uses: actions/checkout@v4
+        with:
+          repository: redline-cards/OPCG-Track-Record
+          token: ${{ secrets.TRACKRECORD_REPO_TOKEN }}
+          path: trackrecord-repo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: python -m pip install -r requirements.txt
+
+      - name: Evaluate track record
+        run: python -m src.trackrecord.evaluate
+
+      - name: Publish daily digests
+        working-directory: trackrecord-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898237+github-actions[bot]@users.noreply.github.com"
+          git add onepiece-digests.csv
+          if git diff --cached --quiet; then
+            echo "Nessuna nuova impronta."
+            exit 0
+          fi
+          git commit -m "One Piece: daily digests $(date -u +%Y-%m-%d)"
+          git push
