@@ -13,7 +13,9 @@ from pymongo.errors import ExecutionTimeout
 
 from src.core.prices_graded import attach_graded
 from src.trackrecord.ledger import (
+    SIGNAL_RULES_VERSION,
     TRACK_RECORD_CALLS_COLLECTION,
+    TRACK_RECORD_MIN_PRICE_USD,
     accept_call,
     build_call_event,
     insert_append_only,
@@ -1137,6 +1139,104 @@ def _classify_buy_tier(
     }
 
 
+def _compute_stamp_inputs(
+    prices: List[Dict[str, Any]],
+    now: datetime,
+) -> Dict[str, Optional[float]]:
+    """
+    Variazioni usate dallo stamp (regole v2), calcolate su mediane di 3 giorni invece che su
+    un solo giorno: prezzo attuale = mediana degli ultimi 3 giorni, riferimento a 7 giorni =
+    mediana dei giorni 6-8, a 30 giorni = mediana dei giorni 29-31 (stesso per i listing).
+    Con un solo giorno per lato il rumore quotidiano del prezzo (+-3%) faceva attraversare le
+    soglie avanti e indietro: nello studio di ottobre 2026 il 59% dei cambi di stamp tornava
+    allo stamp precedente entro 7 giorni. Le percentageChange* mostrate sul sito restano
+    quelle giornaliere. prices: righe di una carta, createdAt discendente.
+    """
+    anchor = now.astimezone(timezone.utc).date()
+    daily_price: Dict[int, float] = {}
+    daily_listings: Dict[int, float] = {}
+    for snap in prices:  # discendente: la prima riga di ogni giorno e' la piu' recente
+        created_at = _parse_created_at(snap)
+        if created_at is None:
+            continue
+        offset = (anchor - created_at.astimezone(timezone.utc).date()).days
+        if offset < 0 or offset > 40 or offset in daily_price:
+            continue
+        px = _compute_price_redline(snap)
+        if px is None or px <= 0:
+            continue
+        daily_price[offset] = px
+        listings = _snapshot_total_listings(snap)
+        if listings is not None:
+            daily_listings[offset] = listings
+
+    def window(series: Dict[int, float], lo: int, hi: int) -> Optional[float]:
+        values = [series[d] for d in range(lo, hi + 1) if d in series]
+        return median(values) if values else None
+
+    def near(series: Dict[int, float], center: int, tol: int) -> Optional[float]:
+        for off in [0] + [x for k in range(1, tol + 1) for x in (-k, k)]:
+            if center + off in series:
+                return series[center + off]
+        return None
+
+    def pct(now_value: Optional[float], base: Optional[float]) -> Optional[float]:
+        return _calc_pct_change(now_value, base) if now_value is not None and base else None
+
+    price_now = window(daily_price, 0, 2)
+    listings_now = window(daily_listings, 0, 2) or None
+    return {
+        "pct1": pct(price_now, window(daily_price, 1, 3)),
+        "pct7": pct(price_now, window(daily_price, 6, 8) or near(daily_price, 7, 3)),
+        "pct30": pct(price_now, window(daily_price, 29, 31) or near(daily_price, 30, 7)),
+        "listingsPct30": pct(listings_now, window(daily_listings, 29, 31) or near(daily_listings, 30, 7)),
+    }
+
+
+STAMP_BAND_THRESHOLDS = {
+    # slip7: calo a 7 giorni da Sell Watch; rebound30: calo a 30 giorni da Rebound;
+    # min7/min30: Accumulate.
+    "UNDER_10": {"slip7": -7.0, "rebound30": -22.0, "min7": 6.0, "min30": 12.0},
+    "USD_10_50": {"slip7": -6.0, "rebound30": -18.0, "min7": 5.0, "min30": 10.0},
+    "USD_50_200": {"slip7": -5.0, "rebound30": -15.0, "min7": 4.0, "min30": 8.0},
+    "USD_200_PLUS": {"slip7": -4.0, "rebound30": -12.0, "min7": 3.0, "min30": 6.0},
+    "UNKNOWN": {"slip7": -5.5, "rebound30": -16.0, "min7": 4.0, "min30": 9.0},
+}
+
+# Sell Watch: prezzo in calo mentre crescono le copie in vendita. Nello studio di ottobre 2026 un
+# calo di prezzo da solo non diceva nulla (dopo la chiamata la carta andava come il mercato) e il
+# "mese forte che scivola" faceva peggio (la carta tendeva a risalire); con l'offerta in aumento
+# la carta fa peggio del mercato nei 2/3 dei casi (-5 punti a 4 settimane, -8 a 8).
+SELL_WATCH_MIN_LISTINGS_GROWTH_30D = 15.0
+
+
+def _stamp_entry_key(t: Dict[str, float], p7: float, p30: float, l30: float) -> str:
+    """Stamp che scatta con le soglie di entrata (in ordine di priorita')."""
+    if p7 <= t["slip7"] and p30 <= 0.0 and l30 >= SELL_WATCH_MIN_LISTINGS_GROWTH_30D:
+        return "SELL_WATCH"
+    if p7 >= t["min7"] and p30 >= t["min30"] and p7 <= 25.0 and p30 <= 55.0:
+        return "ACCUMULATE"
+    if l30 <= -20.0 and p30 >= 5.0 and p7 >= 2.0:
+        return "BUY_SETUP"
+    if p30 <= t["rebound30"] and p7 >= 4.0:
+        return "REBOUND_WATCH"
+    return "HOLD"
+
+
+def _stamp_still_valid(key: str, t: Dict[str, float], p7: float, p30: float, l30: float) -> bool:
+    """Isteresi: condizioni di uscita, piu' larghe di quelle di entrata. Si esce dallo stamp
+    solo quando il segnale e' davvero finito, non al primo giorno sotto la soglia."""
+    if key == "SELL_WATCH":
+        return p7 <= 0.0 and l30 >= 5.0
+    if key == "ACCUMULATE":
+        return p7 >= -2.0 and p30 >= t["min30"] * 0.25 and p7 <= 30.0 and p30 <= 65.0
+    if key == "BUY_SETUP":
+        return l30 <= -8.0 and p30 >= 0.0 and p7 >= -3.0
+    if key == "REBOUND_WATCH":
+        return p30 <= t["rebound30"] * 0.25 and p7 >= -1.0
+    return False
+
+
 def _classify_stamp(
     price_band_key: str,
     pct1: Optional[float],
@@ -1144,53 +1244,29 @@ def _classify_stamp(
     pct30: Optional[float],
     listings_pct30: Optional[float],
     buy_tier: Optional[Dict[str, Any]],
+    previous_stamp: Optional[str] = None,
 ) -> Dict[str, Any]:
-    band_thresholds = {
-        "UNDER_10": {"sell7": -12.0, "strong30": 14.0, "rebound30": -22.0},
-        "USD_10_50": {"sell7": -10.0, "strong30": 12.0, "rebound30": -18.0},
-        "USD_50_200": {"sell7": -8.0, "strong30": 10.0, "rebound30": -15.0},
-        "USD_200_PLUS": {"sell7": -6.0, "strong30": 8.0, "rebound30": -12.0},
-        "UNKNOWN": {"sell7": -9.0, "strong30": 10.0, "rebound30": -16.0},
-    }
-    t = band_thresholds.get(price_band_key, band_thresholds["UNKNOWN"])
-
-    p1 = pct1 if pct1 is not None else 0.0
+    """
+    Regole v2 (SIGNAL_RULES_VERSION in src/trackrecord/ledger.py). Gli input vanno calcolati con
+    _compute_stamp_inputs. previous_stamp: stamp attuale della carta, per l'isteresi; un nuovo
+    stamp diverso da Hold sostituisce sempre quello attuale.
+    Lo stamp e' indipendente dal buy tier (pattern); pct1 e buy_tier restano in firma per i chiamanti.
+    """
+    t = STAMP_BAND_THRESHOLDS.get(price_band_key, STAMP_BAND_THRESHOLDS["UNKNOWN"])
     p7 = pct7 if pct7 is not None else 0.0
     p30 = pct30 if pct30 is not None else 0.0
     l30 = listings_pct30 if listings_pct30 is not None else 0.0
 
-    sell_watch = (p7 <= t["sell7"]) or (p30 >= t["strong30"] and p7 <= -3.0)
-    if sell_watch:
-        rule = STAMP_RULES["SELL_WATCH"]
-        return {"key": "SELL_WATCH", "label": rule["label"], "kind": rule["kind"]}
-
-    # Stamp must be independent from tier: classify Accumulate with
-    # stamp-specific momentum thresholds by price band.
-    accumulate_thresholds = {
-        "UNDER_10": {"min7": 6.0, "min30": 12.0},
-        "USD_10_50": {"min7": 5.0, "min30": 10.0},
-        "USD_50_200": {"min7": 4.0, "min30": 8.0},
-        "USD_200_PLUS": {"min7": 2.0, "min30": 6.0},
-        "UNKNOWN": {"min7": 4.0, "min30": 9.0},
-    }
-    acc = accumulate_thresholds.get(price_band_key, accumulate_thresholds["UNKNOWN"])
-    accumulate = p7 >= acc["min7"] and p30 >= acc["min30"] and p7 <= 25.0 and p30 <= 55.0
-    if accumulate:
-        rule = STAMP_RULES["ACCUMULATE"]
-        return {"key": "ACCUMULATE", "label": rule["label"], "kind": rule["kind"]}
-
-    buy_setup = l30 <= -20.0 and p30 >= 4.0 and p7 >= 0.0
-    if buy_setup:
-        rule = STAMP_RULES["BUY_SETUP"]
-        return {"key": "BUY_SETUP", "label": rule["label"], "kind": rule["kind"]}
-
-    rebound_watch = p30 <= t["rebound30"] and p7 >= 3.0 and p1 >= 0.0
-    if rebound_watch:
-        rule = STAMP_RULES["REBOUND_WATCH"]
-        return {"key": "REBOUND_WATCH", "label": rule["label"], "kind": rule["kind"]}
-
-    rule = STAMP_RULES["HOLD"]
-    return {"key": "HOLD", "label": rule["label"], "kind": rule["kind"]}
+    key = _stamp_entry_key(t, p7, p30, l30)
+    if (
+        key == "HOLD"
+        and previous_stamp in STAMP_RULES
+        and previous_stamp != "HOLD"
+        and _stamp_still_valid(previous_stamp, t, p7, p30, l30)
+    ):
+        key = previous_stamp
+    rule = STAMP_RULES[key]
+    return {"key": key, "label": rule["label"], "kind": rule["kind"]}
 
 def compute_market_data_for_item(
     prices: List[Dict[str, Any]],
@@ -1199,7 +1275,9 @@ def compute_market_data_for_item(
     psa10_count_previous: Optional[float],
     psa10_growth_rate: Optional[float] = None,
     population_docs: Optional[List[Dict[str, Any]]] = None,
+    previous_stamp: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """previous_stamp: chiave dello stamp attuale della carta (CardsStamps), per l'isteresi."""
     latest = prices[0] if prices else None
 
     # Current series (USD)
@@ -1432,13 +1510,15 @@ def compute_market_data_for_item(
     sales_7d_estimate = _compute_sales_estimate(prices, now, window_days=7)
     sales_30d_estimate = _compute_sales_estimate(prices, now, window_days=30)
 
+    stamp_inputs = _compute_stamp_inputs(prices, now)
     stamp = _classify_stamp(
         price_band_key=price_band.get("key", "UNKNOWN"),
-        pct1=pct1,
-        pct7=pct7,
-        pct30=pct30,
-        listings_pct30=listings_pct30,
+        pct1=stamp_inputs["pct1"],
+        pct7=stamp_inputs["pct7"],
+        pct30=stamp_inputs["pct30"],
+        listings_pct30=stamp_inputs["listingsPct30"],
         buy_tier=buy_tier,
+        previous_stamp=previous_stamp,
     )
 
     return {
@@ -1544,6 +1624,7 @@ def compute_market_data_for_item(
         "priceBand": price_band,
         "buyTier": buy_tier,
         "stamp": stamp,
+        "stampInputs": {k: _round2(v) for k, v in stamp_inputs.items()},  # % su mediane di 3 giorni
         "listingChange7d": listings_pct7,
         "listingChange30d": listings_pct30,
         "athPrice": price_position.get("ath"),
@@ -2509,6 +2590,7 @@ def update_cards_market_data(
             "stamp": 1,
             "buyTier": 1,
             "priceBand": 1,
+            "rulesVersion": 1,
         },
     ):
         item_id = stamp_doc.get("itemId")
@@ -2541,6 +2623,7 @@ def update_cards_market_data(
             psa10_count_previous,
             psa10_growth_rate,
             population_history_by_card.get(cid, []),
+            previous_stamp=((previous_stamp_doc.get("stamp") or {}).get("key") if isinstance(previous_stamp_doc, dict) else None),
         )
         md["characterPopularity"] = _match_character_popularity(
             base_card.get("name"),
@@ -2591,8 +2674,15 @@ def update_cards_market_data(
                 )
             )
             # Si verifica solo lo stamp (la chiamata); il pattern attivo resta come contesto
-            # nel campo buyTierAtCall dell'evento.
-            if track_record:
+            # nel campo buyTierAtCall dell'evento. Non si registra:
+            # - un cambio dovuto a una nuova versione delle regole (lo stamp precedente era stato
+            #   calcolato con regole diverse), che non e' un movimento di mercato;
+            # - una carta sotto TRACK_RECORD_MIN_PRICE_USD, dove i costi superano il movimento.
+            if (
+                track_record
+                and previous_stamp_doc.get("rulesVersion") == SIGNAL_RULES_VERSION
+                and (_to_number(md.get("price")) or 0.0) >= TRACK_RECORD_MIN_PRICE_USD
+            ):
                 event = build_call_event(
                     item_id=cid,
                     signal_type="stamp",
@@ -2612,6 +2702,7 @@ def update_cards_market_data(
             "priceBand": current_band,
             "stamp": md.get("stamp"),
             "buyTier": md.get("buyTier"),
+            "rulesVersion": SIGNAL_RULES_VERSION,
             "marketDataUpdatedAt": md.get("updatedAt"),
             "updatedAt": now_utc,
         }

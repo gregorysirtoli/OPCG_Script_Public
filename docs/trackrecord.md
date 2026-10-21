@@ -15,9 +15,41 @@ Solo One Piece: la registrazione parte solo con `TRACK_RECORD_ENABLED=1`, impost
 `OnePiece - marketData.yml`; gli altri giochi usano la stessa funzione ma non scrivono nulla.
 
 **Cooldown di 14 giorni** (`REENTRY_COOLDOWN_DAYS` in `ledger.py`): un cambio non viene registrato se la
-stessa carta ha gia' una chiamata registrata con lo stesso stamp negli ultimi 14 giorni. La finestra parte dall'ultima chiamata registrata, quindi uno stamp che oscilla
-(Buy Setup -> Hold -> Buy Setup...) entra nel registro al massimo una volta ogni 14 giorni. Sulla carta
-OP09 Buggy [Alternate Art], un anno di storico: 21 cambi di stamp, 12 registrati.
+stessa carta ha gia' una chiamata registrata con lo stesso stamp negli ultimi 14 giorni. La finestra
+parte dall'ultima chiamata registrata, quindi uno stamp che oscilla (Buy Setup -> Hold -> Buy Setup...)
+entra nel registro al massimo una volta ogni 14 giorni.
+
+**Soglia di 5 $** (`TRACK_RECORD_MIN_PRICE_USD`): sotto questo prezzo commissione e spedizione superano il
+movimento del prezzo, quindi le chiamate non vengono registrate e le carte non entrano nel benchmark.
+
+**Primo giorno di una nuova versione delle regole**: `CardsStamps.rulesVersion` dice con quali regole e'
+stato calcolato lo stamp attuale. Se e' diverso da `SIGNAL_RULES_VERSION`, il cambio di quel giorno viene
+dalle regole e non dal mercato, quindi non si registra.
+
+## Regole degli stamp v2 (ottobre 2026)
+
+Studio su 2.500 carte e 170 giorni: con le regole v1 una carta cambiava stamp 8,1 volte ogni 90 giorni e
+nel 59% dei casi tornava allo stamp precedente entro 7 giorni (soglie secche su variazioni di un solo
+giorno, rumore del prezzo +-3%). Le regole v2 (`_compute_stamp_inputs`, `_classify_stamp` in
+`getMarketData.py`):
+
+- **Prezzi ammorbiditi**: variazioni calcolate su mediane di 3 giorni (oggi vs giorni 6-8 e 29-31). Un
+  crollo di un solo giorno non cambia lo stamp; uno vero viene riconosciuto con circa un giorno di ritardo.
+- **Isteresi**: si entra con le soglie di entrata, si esce solo quando il segnale e' davvero finito
+  (`_stamp_still_valid`). Un nuovo stamp diverso da Hold sostituisce sempre quello attuale.
+- **Soglie vicine allo zero proporzionate alla fascia**: Buy Setup `p7 >= +2%` e `p30 >= +5%` (prima 0% e
+  4%); Rebound senza la condizione sul giorno singolo e con `p7 >= +4%`; Accumulate $200+ `p7 >= +3%`.
+- **Sell Watch ridefinito**: prezzo in calo a 7 giorni (`slip7`: -7/-6/-5/-4% dalle carte economiche alle
+  care) **e** a 30 giorni (`p30 <= 0`) **con** almeno +15% di copie in vendita in 30 giorni. Esce quando
+  il prezzo a 7 giorni torna sopra zero o l'offerta scende sotto +5%. Nello studio su 3.000 carte il
+  Sell Watch v1 non aveva vantaggio (dopo la chiamata la carta andava come il mercato) e il "mese forte
+  che scivola" era controproducente (+2,4 punti sul mercato: la carta tendeva a risalire); il calo con
+  offerta in aumento fa peggio del mercato nei 2/3 dei casi.
+
+Risultato (3.000 carte, 170 giorni): da 8,1 a 2,9 cambi di stamp ogni 90 giorni (-64%). A 4 settimane:
+Sell Watch giuste 67% (prima 48%), -5,5 punti sul mercato (prima -0,8; -8,3 a 8 settimane); Buy Setup
++8,7 punti sul mercato; Accumulate e Hold invariati. Le `percentageChange*` mostrate sul sito restano
+quelle giornaliere; quelle usate dallo stamp sono in `marketData.stampInputs`.
 
 **Solo lo stamp viene verificato.** Il pattern (buy tier) descrive il movimento che ha portato allo stamp: non e' una
 chiamata a se', non genera eventi e resta come contesto nel campo `buyTierAtCall`.
@@ -83,7 +115,7 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
    zeri finali, righe ordinate e unite da `\n`; stessa regola in `OPCG/lib/trackRecord.ts`) di chiamate e
    previsioni del giorno, piu' `chainSha256 = sha256(chain del giorno prima|giorno|callsSha|forecastsSha)`.
    Ogni giro ricalcola tutte le impronte passate e segnala via mail quelle diverse.
-4. **Versioni**: cambiando soglie o logica di stamp, buy tier o fasce si alza `SIGNAL_RULES_VERSION`
+4. **Versioni**: cambiando soglie o logica di stamp o fasce si alza `SIGNAL_RULES_VERSION`
    (`src/trackrecord/ledger.py`). Cambiando costi o finestre si alza `EVAL_METHOD_VERSION`
    (`src/trackrecord/evaluate.py`). Nessun reset: le versioni precedenti restano nel riepilogo.
 5. **Backtest e dal vivo separati**: i `proof` in `PRICE_BAND_RULES` e `BUY_TIER_RULES` sono numeri di

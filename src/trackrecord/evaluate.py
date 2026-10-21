@@ -45,6 +45,7 @@ from src.trackrecord.ledger import (
     TRACK_RECORD_DIGESTS_COLLECTION,
     TRACK_RECORD_FORECAST_OUTCOMES_COLLECTION,
     TRACK_RECORD_FORECASTS_COLLECTION,
+    TRACK_RECORD_MIN_PRICE_USD,
     TRACK_RECORD_OUTCOMES_COLLECTION,
     TRACK_RECORD_SUMMARY_COLLECTION,
     chain_hash,
@@ -204,7 +205,7 @@ def _get_benchmark(db: Database, day: datetime, horizon: int, item_types: Dict[s
     for item_id, points in series.items():
         entry = _entry_price(points, entry_at)
         exit_price = _exit_window(exits.get(item_id, []), target)["price"]
-        if entry is None or exit_price is None:
+        if entry is None or exit_price is None or entry < TRACK_RECORD_MIN_PRICE_USD:
             continue
         band = _band_for_price(entry)
         gross = _pct(exit_price, entry)

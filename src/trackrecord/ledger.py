@@ -32,10 +32,19 @@ TRACK_RECORD_BENCHMARKS_COLLECTION = "TrackRecordBenchmarks"
 TRACK_RECORD_SUMMARY_COLLECTION = "TrackRecordSummary"
 TRACK_RECORD_DIGESTS_COLLECTION = "TrackRecordDigests"
 
-# Versione delle regole di stamp/buy tier (src/metrics/getMarketData.py). Va alzata a ogni
-# modifica di soglie o logica di _classify_stamp / _classify_buy_tier / _classify_price_band:
-# le chiamate gia' registrate restano con la loro versione.
-SIGNAL_RULES_VERSION = "v1"
+# Versione delle regole di stamp (src/metrics/getMarketData.py). Va alzata a ogni modifica di
+# soglie o logica di _classify_stamp / _compute_stamp_inputs / _classify_price_band: le chiamate
+# gia' registrate restano con la loro versione. Il primo giorno di una nuova versione non si
+# registra nulla (vedi update_cards_market_data): i cambi di quel giorno vengono dalle regole.
+#   v1: soglie su variazioni di un solo giorno.
+#   v2 (ottobre 2026): prezzi su mediane di 3 giorni, isteresi in uscita, soglie vicine allo
+#       zero rese proporzionate alla fascia, Sell Watch = prezzo in calo con offerta in aumento.
+#       -64% di cambi di stamp; Sell Watch da 48% a 67% di chiamate giuste (docs/trackrecord.md).
+SIGNAL_RULES_VERSION = "v2"
+
+# Sotto questo prezzo (USD) commissione e spedizione superano il movimento del prezzo: le
+# chiamate non entrano nel registro e le carte non entrano nel benchmark di mercato.
+TRACK_RECORD_MIN_PRICE_USD = 5.0
 
 # Prezzo usato per stamp e valutazione: priceRedLine (mediana delle fonti della riga di Prices), USD.
 PRICE_SOURCE = "priceRedLine"
@@ -144,13 +153,8 @@ def build_call_event(
             "sales30dEstimate": md.get("sales30d"),
         },
         "priceBand": price_band.get("key") or "UNKNOWN",
-        "inputs": {
-            "pct1d": md.get("percentageChange1d"),
-            "pct7d": md.get("percentageChange7d"),
-            "pct30d": md.get("percentageChange30d"),
-            "pct90d": md.get("percentageChange90d"),
-            "listingChange30d": md.get("listingChange30d"),
-        },
+        # Variazioni su mediane di 3 giorni usate dallo stamp (regole v2).
+        "inputs": dict(md.get("stampInputs") or {}),
         "stampAtCall": (md.get("stamp") or {}).get("key"),
         "buyTierAtCall": (md.get("buyTier") or {}).get("key"),
     }
