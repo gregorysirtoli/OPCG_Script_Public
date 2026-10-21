@@ -13,7 +13,6 @@ from pymongo.errors import ExecutionTimeout
 
 from src.core.prices_graded import attach_graded
 from src.trackrecord.ledger import (
-    SIGNAL_RULES_VERSION,
     TRACK_RECORD_CALLS_COLLECTION,
     TRACK_RECORD_MIN_PRICE_USD,
     accept_call,
@@ -2590,7 +2589,6 @@ def update_cards_market_data(
             "stamp": 1,
             "buyTier": 1,
             "priceBand": 1,
-            "rulesVersion": 1,
         },
     ):
         item_id = stamp_doc.get("itemId")
@@ -2674,15 +2672,9 @@ def update_cards_market_data(
                 )
             )
             # Si verifica solo lo stamp (la chiamata); il pattern attivo resta come contesto
-            # nel campo buyTierAtCall dell'evento. Non si registra:
-            # - un cambio dovuto a una nuova versione delle regole (lo stamp precedente era stato
-            #   calcolato con regole diverse), che non e' un movimento di mercato;
-            # - una carta sotto TRACK_RECORD_MIN_PRICE_USD, dove i costi superano il movimento.
-            if (
-                track_record
-                and previous_stamp_doc.get("rulesVersion") == SIGNAL_RULES_VERSION
-                and (_to_number(md.get("price")) or 0.0) >= TRACK_RECORD_MIN_PRICE_USD
-            ):
+            # nel campo buyTierAtCall dell'evento. Le carte sotto TRACK_RECORD_MIN_PRICE_USD non si
+            # registrano: i costi di vendita superano il movimento del prezzo.
+            if track_record and (_to_number(md.get("price")) or 0.0) >= TRACK_RECORD_MIN_PRICE_USD:
                 event = build_call_event(
                     item_id=cid,
                     signal_type="stamp",
@@ -2702,7 +2694,6 @@ def update_cards_market_data(
             "priceBand": current_band,
             "stamp": md.get("stamp"),
             "buyTier": md.get("buyTier"),
-            "rulesVersion": SIGNAL_RULES_VERSION,
             "marketDataUpdatedAt": md.get("updatedAt"),
             "updatedAt": now_utc,
         }

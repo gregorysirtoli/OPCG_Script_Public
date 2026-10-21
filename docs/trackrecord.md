@@ -22,10 +22,6 @@ entra nel registro al massimo una volta ogni 14 giorni.
 **Soglia di 5 $** (`TRACK_RECORD_MIN_PRICE_USD`): sotto questo prezzo commissione e spedizione superano il
 movimento del prezzo, quindi le chiamate non vengono registrate e le carte non entrano nel benchmark.
 
-**Primo giorno di una nuova versione delle regole**: `CardsStamps.rulesVersion` dice con quali regole e'
-stato calcolato lo stamp attuale. Se e' diverso da `SIGNAL_RULES_VERSION`, il cambio di quel giorno viene
-dalle regole e non dal mercato, quindi non si registra.
-
 ## Regole degli stamp v2 (ottobre 2026)
 
 Studio su 2.500 carte e 170 giorni: con le regole v1 una carta cambiava stamp 8,1 volte ogni 90 giorni e

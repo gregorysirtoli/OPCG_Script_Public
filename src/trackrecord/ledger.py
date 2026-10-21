@@ -34,8 +34,7 @@ TRACK_RECORD_DIGESTS_COLLECTION = "TrackRecordDigests"
 
 # Versione delle regole di stamp (src/metrics/getMarketData.py). Va alzata a ogni modifica di
 # soglie o logica di _classify_stamp / _compute_stamp_inputs / _classify_price_band: le chiamate
-# gia' registrate restano con la loro versione. Il primo giorno di una nuova versione non si
-# registra nulla (vedi update_cards_market_data): i cambi di quel giorno vengono dalle regole.
+# gia' registrate restano con la loro versione.
 #   v1: soglie su variazioni di un solo giorno.
 #   v2 (ottobre 2026): prezzi su mediane di 3 giorni, isteresi in uscita, soglie vicine allo
 #       zero rese proporzionate alla fascia, Sell Watch = prezzo in calo con offerta in aumento.
