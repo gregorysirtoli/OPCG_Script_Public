@@ -7,6 +7,8 @@ done:
 - card record sale
 - big pump (card over 100$, attenzione a picchi anomali es. +226700.00% ????)
 - big dump (card over 100$, attenzione a picchi anomali es. +226700.00% ????)
+- market insight (card breakdown)
+- top sealed products (booster box / booster box case, a giovedi' alterni)
 
 ---
 
@@ -16,7 +18,6 @@ in progress:
 
 To do:
 
-- card market insight/breakdown
 - card comparison
 - set vs set
 - best sellers (<https://redline.cards/cards/best-sellers>)
@@ -24,5 +25,4 @@ To do:
 - top movers monthly (<https://redline.cards/cards/top-movers/monthly>)
 - best deals (?)(<https://redline.cards/cards/best-deals>)
 - top cards in 30 days (<https://redline.cards/cards?type=Cards&language=en&priceMin=100&orderBy=percentageChange30d%3Adesc>)
-- top sealed products
 - top sets by price change in 30 days

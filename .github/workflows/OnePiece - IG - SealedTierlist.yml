@@ -1,0 +1,62 @@
+name: OnePiece - IG - Tierlist (sealed)
+
+# Ogni giovedi': lo script decide il turno (giovedi' vuoto, Booster Box, vuoto, Booster Box Case, ...).
+# Da GitHub si puo' forzare il tipo con l'input "kind".
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "auto = calendario, box = Booster Boxes, case = Booster Box Cases"
+        type: choice
+        options:
+          - auto
+          - box
+          - case
+        default: auto
+  schedule:
+    - cron: "0 15 * * 4"
+
+jobs:
+  generate-sealed-tierlist:
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      MONGODB_URI: ${{ secrets.MONGODB_URI_ONEPIECE }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
+      GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
+      GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
+      AI_GATEWAY_BASE_URL: ${{ secrets.AI_GATEWAY_BASE_URL }}
+      AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+      AI_GATEWAY_MODEL: ${{ secrets.AI_GATEWAY_MODEL }}
+      SEALED_TIERLIST_KIND: ${{ inputs.kind || 'auto' }}
+      INSTAGRAM_POST_INITIAL_STATUS: draft
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Checkout private providers repo
+        uses: actions/checkout@v4
+        with:
+          repository: gregorysirtoli/OPCG_Script_Private
+          token: ${{ secrets.PROVIDERS_TOKEN }}
+          path: private_providers
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Generate Sealed Tierlist
+        run: |
+          python -m src.instagram.sealed_tierlist
