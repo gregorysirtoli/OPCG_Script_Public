@@ -53,7 +53,7 @@ chiamata a se', non genera eventi e resta come contesto nel campo `buyTierAtCall
 Stamp e previsioni ML sono due parti indipendenti: un evento di stamp non contiene la previsione e
 il suo esito dipende solo dal prezzo; le previsioni sono valutate per conto loro.
 
-Tutte le collection stanno nel DB principale (`MONGODB_DB`). `CardsStampChanges` resta com'e' ma non e'
+Tutte le collection stanno nel DB principale (`MONGODB_DB`). `CardsStampChanges` sta nel DB vendite (`MONGODB_SALES_DB`), resta com'e' ma non e'
 il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscrive con le regole attuali.
 
 ## Collection
