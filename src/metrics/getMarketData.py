@@ -390,7 +390,8 @@ def _round2(n: Optional[float]) -> Optional[float]:
 # low a $195k e PSA 10 a $130k).
 CM_NO_SALES_FIELDS = ("cmPriceTrend", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d")
 # Low e trend Cardmarket oltre questo rapporto (in un senso o nell'altro) non descrivono lo stesso
-# mercato: trend finto o annuncio fuori mercato/sbagliato.
+# mercato: il low e' un singolo annuncio fuori mercato o sbagliato (es. Uta Treasure Cup 2025:
+# trend $3.3k da vendite reali, low a $112k), quindi si scarta solo il low.
 CM_LOW_TREND_MAX_RATIO = 10.0
 # Sotto questo prezzo (USD) il rapporto low/trend e' rumore (0.02 contro 0.25 e' gia' 12x).
 CM_LOW_TREND_MIN_PRICE_USD = 5.0
@@ -398,20 +399,20 @@ CM_LOW_TREND_MIN_PRICE_USD = 5.0
 CONFIDENCE_ABS_TOLERANCE_USD = 0.5
 
 
-def _is_cardmarket_unreliable(doc: Optional[Dict[str, Any]]) -> bool:
-    """True se i prezzi Cardmarket della riga si contraddicono: vanno esclusi da priceRedLine."""
-    doc = doc or {}
-    no_sales_values = [_to_positive_number(doc.get(key)) for key in CM_NO_SALES_FIELDS]
-    if all(v is not None for v in no_sales_values) and max(no_sales_values) - min(no_sales_values) < 1e-6:
-        return True
+def _cardmarket_has_no_sales(doc: Optional[Dict[str, Any]]) -> bool:
+    """True se trend e medie Cardmarket sono tutte identiche: tutto Cardmarket esce da priceRedLine."""
+    values = [_to_positive_number((doc or {}).get(key)) for key in CM_NO_SALES_FIELDS]
+    return all(v is not None for v in values) and max(values) - min(values) < 1e-6
 
-    trend = _to_positive_number(doc.get("cmPriceTrend"))
-    low = _to_positive_number(doc.get("cmPriceLow"))
-    if trend is not None and low is not None and max(trend, low) >= CM_LOW_TREND_MIN_PRICE_USD:
-        ratio = low / trend
-        if ratio > CM_LOW_TREND_MAX_RATIO or ratio < 1.0 / CM_LOW_TREND_MAX_RATIO:
-            return True
-    return False
+
+def _cardmarket_low_mismatch(doc: Optional[Dict[str, Any]]) -> bool:
+    """True se cmPriceLow e cmPriceTrend distano oltre CM_LOW_TREND_MAX_RATIO: il low esce da priceRedLine."""
+    trend = _to_positive_number((doc or {}).get("cmPriceTrend"))
+    low = _to_positive_number((doc or {}).get("cmPriceLow"))
+    if trend is None or low is None or max(trend, low) < CM_LOW_TREND_MIN_PRICE_USD:
+        return False
+    ratio = low / trend
+    return ratio > CM_LOW_TREND_MAX_RATIO or ratio < 1.0 / CM_LOW_TREND_MAX_RATIO
 
 
 def _compute_price_confidence_score(
@@ -421,14 +422,14 @@ def _compute_price_confidence_score(
 ) -> Optional[float]:
     """Punteggio 0-1 di affidabilita' di priceRedLine.
     0.85 dalle fonti indipendenti (copertura fino a 3 fonti x accordo tra loro), 0.15 dallo storico
-    a 7 e 30 giorni. Cardmarket conta come una sola fonte, ed e' esclusa se incoerente.
+    a 7 e 30 giorni. Cardmarket conta come una sola fonte, ed e' esclusa se senza vendite.
     0 = c'erano prezzi ma sono stati scartati tutti (priceRedLine null, bassa affidabilita');
     None = nessun prezzo.
     """
     doc = doc or {}
-    cm_unreliable = _is_cardmarket_unreliable(doc)
+    cm_no_sales = _cardmarket_has_no_sales(doc)
     cardmarket = None
-    if not cm_unreliable:
+    if not cm_no_sales:
         cardmarket = _to_positive_number(doc.get("cmPriceTrend")) or _to_positive_number(doc.get("cmAvg30d"))
     sources = [
         v for v in (
@@ -441,7 +442,7 @@ def _compute_price_confidence_score(
         if v is not None
     ]
     if not sources:
-        return 0.0 if cm_unreliable else None
+        return 0.0 if cm_no_sales else None
 
     mid = median(sources)
     dispersion = max(max(abs(v - mid) - CONFIDENCE_ABS_TOLERANCE_USD, 0.0) for v in sources) / mid
@@ -453,7 +454,12 @@ def _compute_price_confidence_score(
 
 
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
-    cardmarket_keys = () if _is_cardmarket_unreliable(doc) else ("cmPriceTrend", "cmPriceLow", "cmAvg30d")
+    if _cardmarket_has_no_sales(doc):
+        cardmarket_keys: Tuple[str, ...] = ()
+    elif _cardmarket_low_mismatch(doc):
+        cardmarket_keys = ("cmPriceTrend", "cmAvg30d")
+    else:
+        cardmarket_keys = ("cmPriceTrend", "cmPriceLow", "cmAvg30d")
     redline_values = [
         _to_positive_number((doc or {}).get("pricePrimary")),
         *(_to_positive_number((doc or {}).get(key)) for key in cardmarket_keys),
@@ -1404,7 +1410,7 @@ def compute_market_data_for_item(
     cm_trend = _to_number((latest or {}).get("cmPriceTrend"))
     cm_low   = _to_number((latest or {}).get("cmPriceLow"))
 
-    if cm_trend is not None and cm_trend > 0 and cm_low is not None and not _is_cardmarket_unreliable(latest):
+    if cm_trend is not None and cm_trend > 0 and cm_low is not None and not _cardmarket_has_no_sales(latest) and not _cardmarket_low_mismatch(latest):
         # quanto il low è "scontato" rispetto al trend, in %
         low_vs_trend_discount_pct = _round2(((cm_trend - cm_low) / cm_trend) * 100.0)
     else:
