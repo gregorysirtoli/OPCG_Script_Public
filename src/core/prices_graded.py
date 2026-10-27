@@ -120,6 +120,20 @@ def _match_graded(
     return matched
 
 
+def latest_pricecharting(db: Database, item_id: Any) -> Optional[float]:
+    """
+    Ultimo pricePriceCharting > 0 della carta in PricesGraded (None se non c'e'). All'ingest serve
+    a riportarlo nella riga del giorno quando lo scraping non l'ha preso, come fa
+    _carry_forward_pricecharting di getMarketData, cosi' Prices.priceRedLine lo considera.
+    """
+    doc = db[PRICES_GRADED_COLLECTION].find_one(
+        {"itemId": item_id, "pricePriceCharting": {"$gt": 0}},
+        {"pricePriceCharting": 1},
+        sort=[("createdAt", -1)],
+    )
+    return doc.get("pricePriceCharting") if doc else None
+
+
 def _load_graded(db: Database, query: Dict[str, Any], wanted: List[str]) -> List[Dict[str, Any]]:
     projection = {field: 1 for field in wanted}
     projection.update({"itemId": 1, "createdAt": 1})

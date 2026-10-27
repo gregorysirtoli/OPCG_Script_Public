@@ -25,7 +25,12 @@ from src.core.logging_setup import configure_logger
 from src.core.utils import TokenBucket, get_fx_eur_usd
 from src.metrics.getMarketData import _compute_price_redline
 from src.ingest.priceArchive import archive_old_prices
-from src.core.prices_graded import PRICES_GRADED_COLLECTION, ensure_prices_graded_collection, split_graded_row
+from src.core.prices_graded import (
+    PRICES_GRADED_COLLECTION,
+    ensure_prices_graded_collection,
+    latest_pricecharting,
+    split_graded_row,
+)
 logger = configure_logger()
 
 # =========================
@@ -521,7 +526,14 @@ def main() -> int:
                     run_created_at = now_rome()
                 row["createdAt"] = run_created_at
 
-                price_redline = _compute_price_redline(row)
+                # senza PriceCharting in questa esecuzione si usa l'ultimo tracciato (solo per il calcolo:
+                # la riga di PricesGraded resta quella dello scraping)
+                redline_row = row
+                if "pricePriceCharting" not in row:
+                    last_pc = latest_pricecharting(db, item_id)
+                    if last_pc is not None:
+                        redline_row = {**row, "pricePriceCharting": last_pc}
+                price_redline = _compute_price_redline(redline_row)
                 if price_redline is not None:
                     row["priceRedLine"] = price_redline
 

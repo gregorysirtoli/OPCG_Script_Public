@@ -390,8 +390,7 @@ def _round2(n: Optional[float]) -> Optional[float]:
 # low a $195k e PSA 10 a $130k).
 CM_NO_SALES_FIELDS = ("cmPriceTrend", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d")
 # Low e trend Cardmarket oltre questo rapporto (in un senso o nell'altro) non descrivono lo stesso
-# mercato: il low e' un singolo annuncio fuori mercato o sbagliato (es. Uta Treasure Cup 2025:
-# trend $3.3k da vendite reali, low a $112k), quindi si scarta solo il low.
+# mercato (es. Uta Treasure Cup 2025: trend $3.3k da vendite reali, low a $112k): spread null.
 CM_LOW_TREND_MAX_RATIO = 10.0
 # Sotto questo prezzo (USD) il rapporto low/trend e' rumore (0.02 contro 0.25 e' gia' 12x).
 CM_LOW_TREND_MIN_PRICE_USD = 5.0
@@ -399,18 +398,21 @@ CM_LOW_TREND_MIN_PRICE_USD = 5.0
 # giapponesi da pochi centesimi intorno a $1.5-2.2 (ottobre 2026: con $0.5 finiva sotto 0.40 il 42%
 # delle JP, con $2 l'11%; sopra $20 non cambia quasi nulla).
 CONFIDENCE_ABS_TOLERANCE_USD = 2.0
+# Sotto questo priceConfidenceScore niente segnali: gradingProfit, gradingAttractiveness, priceBand
+# (UNKNOWN), buyTier, stamp (Hold) e chiamate del track record.
+SIGNALS_MIN_PRICE_CONFIDENCE = 0.40
 
 
 def _cardmarket_has_no_sales(doc: Optional[Dict[str, Any]]) -> bool:
     """True se trend e medie Cardmarket presenti (almeno 3) sono tutte identiche: Cardmarket non conta
-    nello score e, se e' l'unica fonte, priceRedLine e' null. cmPriceAvg a volte manca (es. Law CS 2023
-    TPP: trend e medie a $0.78)."""
+    come fonte nello score (resta nella mediana di priceRedLine). cmPriceAvg a volte manca (es. Law
+    CS 2023 TPP: trend e medie a $0.78)."""
     values = [v for v in (_to_positive_number((doc or {}).get(key)) for key in CM_NO_SALES_FIELDS) if v is not None]
     return len(values) >= 3 and max(values) - min(values) < 1e-6
 
 
 def _cardmarket_low_mismatch(doc: Optional[Dict[str, Any]]) -> bool:
-    """True se cmPriceLow e cmPriceTrend distano oltre CM_LOW_TREND_MAX_RATIO: il low esce da priceRedLine."""
+    """True se cmPriceLow e cmPriceTrend distano oltre CM_LOW_TREND_MAX_RATIO (spread null)."""
     trend = _to_positive_number((doc or {}).get("cmPriceTrend"))
     low = _to_positive_number((doc or {}).get("cmPriceLow"))
     if trend is None or low is None or max(trend, low) < CM_LOW_TREND_MIN_PRICE_USD:
@@ -427,9 +429,8 @@ def _compute_price_confidence_score(
     """Punteggio 0-1 di affidabilita' di priceRedLine.
     0.85 dalle fonti indipendenti (copertura fino a 3 fonti x accordo tra loro), 0.15 dallo storico
     a 7 e 30 giorni. Cardmarket conta come una sola fonte; se senza vendite non conta nella copertura
-    ma entra nell'accordo, perche' resta nella mediana di priceRedLine quando ci sono altre fonti.
-    0 = c'erano prezzi ma sono stati scartati tutti (priceRedLine null, bassa affidabilita');
-    None = nessun prezzo.
+    ma entra nell'accordo, perche' resta nella mediana di priceRedLine.
+    0 = l'unico prezzo e' Cardmarket senza vendite (bassa affidabilita'); None = nessun prezzo.
     """
     doc = doc or {}
     cm_no_sales = _cardmarket_has_no_sales(doc)
@@ -462,23 +463,17 @@ def _compute_price_confidence_score(
 
 
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
-    other_values = [
-        _to_positive_number((doc or {}).get(key))
-        for key in ("pricePrimary", "priceYuyuTei", "pricePriceCharting", "priceCardTrader")
+    # Mediana di tutte le fonti, senza scarti: quanto il prezzo sia affidabile lo dice priceConfidenceScore.
+    redline_values = [
+        _to_positive_number((doc or {}).get("pricePrimary")),
+        _to_positive_number((doc or {}).get("cmPriceTrend")),
+        _to_positive_number((doc or {}).get("cmPriceLow")),
+        _to_positive_number((doc or {}).get("cmAvg30d")),
+        _to_positive_number((doc or {}).get("priceYuyuTei")),
+        _to_positive_number((doc or {}).get("pricePriceCharting")),
+        _to_positive_number((doc or {}).get("priceCardTrader")),
     ]
-    other_values = [value for value in other_values if value is not None]
-    # Cardmarket senza vendite esce solo se e' l'unica fonte: con altre fonti resta nella mediana,
-    # che cosi' assorbe una singola fonte mappata male (es. Crocodile Offline Regional 2023 Winner:
-    # Cardmarket fermo a $1.1k, PriceCharting $1.60 della carta base). Lo score lo conta comunque
-    # come fonte non valida.
-    if _cardmarket_has_no_sales(doc) and not other_values:
-        cardmarket_keys: Tuple[str, ...] = ()
-    elif _cardmarket_low_mismatch(doc):
-        cardmarket_keys = ("cmPriceTrend", "cmAvg30d")
-    else:
-        cardmarket_keys = ("cmPriceTrend", "cmPriceLow", "cmAvg30d")
-    cardmarket_values = [_to_positive_number((doc or {}).get(key)) for key in cardmarket_keys]
-    redline_values = other_values + [value for value in cardmarket_values if value is not None]
+    redline_values = [value for value in redline_values if value is not None]
     return _round2(median(redline_values)) if redline_values else None
 
 
@@ -534,7 +529,7 @@ def _weighted_median(pairs: List[Dict[str, float]]) -> float:
 
 
 def _pick_market_price(md: Optional[Dict[str, Any]]) -> Optional[float]:
-    # priceConfidenceScore 0: prezzi scartati, i campi grezzi (priceTrend, ...) non vanno ripescati
+    # priceConfidenceScore 0: l'unico prezzo e' Cardmarket senza vendite, la carta non entra nei totali
     if not isinstance(md, dict) or md.get("priceConfidenceScore") == 0:
         return None
     for key in (
@@ -1498,8 +1493,13 @@ def compute_market_data_for_item(
     psa10_count_percentage_change_180d = _calc_pct_change(psa10_count, psa10_count_180d)
     psa10_count_percentage_change = _calc_pct_change(psa10_count, psa10_count_previous)
 
+    # Segnali (grading, priceBand, buyTier, stamp) solo con un prezzo affidabile: con score basso
+    # escono numeri assurdi (es. Zoro CS 25-26 1st Place a $67 con PSA 10 a $130k: gradingProfit +88.245%).
+    price_confidence_score = _compute_price_confidence_score(latest, price_7d, price_30d)
+    signals_ok = price_confidence_score is not None and price_confidence_score >= SIGNALS_MIN_PRICE_CONFIDENCE
+
     # gradingProfit percent (%)
-    if s.price_now_usd:
+    if s.price_now_usd and signals_ok:
         effective_cost = s.price_now_usd + (GRADING_FEES or 0.0)
         if effective_cost > 0:
             gp_psa10 = _round2(((psa10_usd - effective_cost) / effective_cost) * 100) if psa10_usd is not None else None
@@ -1526,7 +1526,10 @@ def compute_market_data_for_item(
     )
 
     listings_pct7, listings_pct30 = _compute_listing_pct_changes(prices, now)
-    price_band = _classify_price_band(_median_redline_window(prices, now, days=30), s.price_now_usd)
+    if signals_ok:
+        price_band = _classify_price_band(_median_redline_window(prices, now, days=30), s.price_now_usd)
+    else:
+        price_band = _classify_price_band(None, None)
     price_position = _compute_price_position(s.price_now_usd, prices)
     buy_tier = _classify_buy_tier(
         set_id=graded_first.get("setId"),
@@ -1539,7 +1542,7 @@ def compute_market_data_for_item(
         listings_pct7=listings_pct7,
         listings_pct30=listings_pct30,
         near_ath=price_position.get("nearAth"),
-    )
+    ) if signals_ok else None
     avg_gain_4w_pct = _compute_avg_gain_window_pct(prices, window_days=28)
     avg_gain_8w_pct = _compute_avg_gain_window_pct(prices, window_days=56)
     if buy_tier is not None:
@@ -1554,15 +1557,18 @@ def compute_market_data_for_item(
     sales_30d_estimate = _compute_sales_estimate(prices, now, window_days=30)
 
     stamp_inputs = _compute_stamp_inputs(prices, now)
-    stamp = _classify_stamp(
-        price_band_key=price_band.get("key", "UNKNOWN"),
-        pct1=stamp_inputs["pct1"],
-        pct7=stamp_inputs["pct7"],
-        pct30=stamp_inputs["pct30"],
-        listings_pct30=stamp_inputs["listingsPct30"],
-        buy_tier=buy_tier,
-        previous_stamp=previous_stamp,
-    )
+    if signals_ok:
+        stamp = _classify_stamp(
+            price_band_key=price_band.get("key", "UNKNOWN"),
+            pct1=stamp_inputs["pct1"],
+            pct7=stamp_inputs["pct7"],
+            pct30=stamp_inputs["pct30"],
+            listings_pct30=stamp_inputs["listingsPct30"],
+            buy_tier=buy_tier,
+            previous_stamp=previous_stamp,
+        )
+    else:
+        stamp = {"key": "HOLD", "label": STAMP_RULES["HOLD"]["label"], "kind": STAMP_RULES["HOLD"]["kind"]}
 
     return {
         "updatedAt": datetime.now(timezone.utc),
@@ -1652,7 +1658,7 @@ def compute_market_data_for_item(
         "sales7d": sales_7d_estimate, # STIMA unita' vendute, da calo listing (non conteggio reale)
         "sales30d": sales_30d_estimate, # STIMA unita' vendute, da calo listing (non conteggio reale)
         "gradingAttractivenessScore": grading_attractiveness_score, # 0..100
-        "priceConfidenceScore": _compute_price_confidence_score(latest, price_7d, price_30d), # 0..1, 0 = prezzo scartato
+        "priceConfidenceScore": price_confidence_score, # 0..1, sotto SIGNALS_MIN_PRICE_CONFIDENCE niente segnali
 
         # ledger-style derived calls
         "priceBand": price_band,
@@ -2708,8 +2714,13 @@ def update_cards_market_data(
             )
             # Si verifica solo lo stamp (la chiamata); il pattern attivo resta come contesto
             # nel campo buyTierAtCall dell'evento. Le carte sotto TRACK_RECORD_MIN_PRICE_USD non si
-            # registrano: i costi di vendita superano il movimento del prezzo.
-            if track_record and (_to_number(md.get("price")) or 0.0) >= TRACK_RECORD_MIN_PRICE_USD:
+            # registrano: i costi di vendita superano il movimento del prezzo. Nemmeno quelle con
+            # priceConfidenceScore sotto soglia: lo stamp torna Hold perche' il prezzo non e' affidabile.
+            if (
+                track_record
+                and (_to_number(md.get("price")) or 0.0) >= TRACK_RECORD_MIN_PRICE_USD
+                and (_to_number(md.get("priceConfidenceScore")) or 0.0) >= SIGNALS_MIN_PRICE_CONFIDENCE
+            ):
                 event = build_call_event(
                     item_id=cid,
                     signal_type="stamp",
