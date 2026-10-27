@@ -391,7 +391,12 @@ def _round2(n: Optional[float]) -> Optional[float]:
 CM_NO_SALES_FIELDS = ("cmPriceTrend", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d")
 # Low e trend Cardmarket oltre questo rapporto (in un senso o nell'altro) non descrivono lo stesso
 # mercato (es. Uta Treasure Cup 2025: trend $3.3k da vendite reali, low a $112k): spread null.
+# Usato anche da _cardmarket_low_as_price.
 CM_LOW_TREND_MAX_RATIO = 10.0
+# Gradati (campi di PricesGraded) che possono confermare cmPriceLow in _cardmarket_low_as_price, e
+# chiave non salvata in cui _carry_forward_pricecharting mette il piu' alto noto fino a quel giorno.
+GRADED_REFERENCE_FIELDS = ("psa10", "bsg10", "cgc10")
+GRADED_MAX_KEY = "_gradedMax"
 # Sotto questo prezzo (USD) il rapporto low/trend e' rumore (0.02 contro 0.25 e' gia' 12x).
 CM_LOW_TREND_MIN_PRICE_USD = 5.0
 # Scarti tra fonti entro questa cifra (USD) non contano come disaccordo: PriceCharting tiene le carte
@@ -462,8 +467,37 @@ def _compute_price_confidence_score(
     return _round2(0.85 * coverage * agreement + 0.15 * history)
 
 
+def _cardmarket_low_as_price(doc: Optional[Dict[str, Any]]) -> Optional[float]:
+    """
+    cmPriceLow come prezzo quando e' l'unico dato vivo: Cardmarket senza vendite, nessun'altra fonte,
+    low oltre CM_LOW_TREND_MAX_RATIO volte il trend e confermato da un gradato (PSA 10, BGS 10 o CGC 10)
+    non inferiore a meta' del low. Es. Zoro CS 25-26 1st Place: trend 60 EUR di riempimento, low
+    175.000 EUR, PSA 10 $130k -> low. Senza conferma un low altissimo e' un annuncio da vetrina
+    (es. Otama Online Regional 2023: low 90.000 EUR tondi, PSA 10 $2k) e resta la mediana.
+    """
+    doc = doc or {}
+    if not _cardmarket_has_no_sales(doc):
+        return None
+    if any(_to_positive_number(doc.get(key)) is not None
+           for key in ("pricePrimary", "priceYuyuTei", "pricePriceCharting", "priceCardTrader")):
+        return None
+    trend = _to_positive_number(doc.get("cmPriceTrend")) or _to_positive_number(doc.get("cmAvg30d"))
+    low = _to_positive_number(doc.get("cmPriceLow"))
+    if trend is None or low is None or low <= trend * CM_LOW_TREND_MAX_RATIO:
+        return None
+    own = [v for v in (_to_positive_number(doc.get(key)) for key in GRADED_REFERENCE_FIELDS) if v is not None]
+    graded = _to_positive_number(doc.get(GRADED_MAX_KEY)) or (max(own) if own else None)
+    if graded is None or graded < low / 2.0:
+        return None
+    return low
+
+
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     # Mediana di tutte le fonti, senza scarti: quanto il prezzo sia affidabile lo dice priceConfidenceScore.
+    # Unica eccezione il caso di _cardmarket_low_as_price.
+    low_price = _cardmarket_low_as_price(doc)
+    if low_price is not None:
+        return _round2(low_price)
     redline_values = [
         _to_positive_number((doc or {}).get("pricePrimary")),
         _to_positive_number((doc or {}).get("cmPriceTrend")),
@@ -772,15 +806,24 @@ def _carry_forward_pricecharting(snaps_desc: List[Dict[str, Any]]) -> None:
     Le righe senza pricePriceCharting (rotazione o blocco dello scraping) prendono l'ultimo
     valore tracciato prima di loro. Senza, la mediana di priceRedLine cambia composizione da
     un giorno all'altro e falsa le variazioni % anche a prezzi fermi.
+    Allo stesso modo ogni riga prende in GRADED_MAX_KEY il gradato piu' alto noto fino a quel giorno
+    (per _cardmarket_low_as_price), senza toccare psa10/bsg10/cgc10 della riga.
     snaps_desc: righe di una sola carta, ordinate per createdAt discendente. Modifica in place.
     """
     last_value: Any = None
+    last_graded: Dict[str, float] = {}
     for doc in reversed(snaps_desc):
         value = doc.get("pricePriceCharting")
         if _to_positive_number(value) is not None:
             last_value = value
         elif last_value is not None:
             doc["pricePriceCharting"] = last_value
+        for key in GRADED_REFERENCE_FIELDS:
+            graded = _to_positive_number(doc.get(key))
+            if graded is not None:
+                last_graded[key] = graded
+        if last_graded:
+            doc[GRADED_MAX_KEY] = max(last_graded.values())
 
 
 def _extract_latest_and_previous_numeric(
@@ -2583,6 +2626,15 @@ def update_cards_market_data(
             fallback = (cards_metrics_latest.get(cid) or {}).get("latestPrice")
             if fallback is not None:
                 graded_first.setdefault(cid, {})["psa10"] = fallback
+
+    # Il PSA 10 di CardsMetrics vale anche come gradato che conferma cmPriceLow (_cardmarket_low_as_price):
+    # alcune promo (es. Zoro CS 25-26 1st Place) non hanno gradati in PricesGraded.
+    for cid, snaps in per_item.items():
+        metrics_psa10 = _to_positive_number((cards_metrics_latest.get(cid) or {}).get("latestPrice"))
+        if metrics_psa10 is None:
+            continue
+        for d in snaps:
+            d[GRADED_MAX_KEY] = max(_to_positive_number(d.get(GRADED_MAX_KEY)) or 0.0, metrics_psa10)
 
     population_history_by_card: Dict[str, List[Dict[str, Any]]] = {}
     population_latest_prev_count: Dict[str, Tuple[Optional[float], Optional[float]]] = {}

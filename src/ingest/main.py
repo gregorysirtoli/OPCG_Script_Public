@@ -23,11 +23,18 @@ from src.core.config import ROME, load_settings
 from src.core.emailer import send_email
 from src.core.logging_setup import configure_logger
 from src.core.utils import TokenBucket, get_fx_eur_usd
-from src.metrics.getMarketData import _compute_price_redline
+from src.metrics.getMarketData import (
+    GRADED_MAX_KEY,
+    GRADED_REFERENCE_FIELDS,
+    _cardmarket_has_no_sales,
+    _compute_price_redline,
+)
 from src.ingest.priceArchive import archive_old_prices
 from src.core.prices_graded import (
     PRICES_GRADED_COLLECTION,
     ensure_prices_graded_collection,
+    latest_cards_metrics_psa10,
+    latest_graded_max,
     latest_pricecharting,
     split_graded_row,
 )
@@ -167,6 +174,8 @@ def main() -> int:
     # ===== DB =====
     client = MongoClient(settings.mongodb_uri, tz_aware=True)
     db = client[settings.mongodb_db]
+    # CardsMetrics (PSA 10) per _cardmarket_low_as_price; senza MONGODB_SALES_* e' il db principale
+    sales_db = MongoClient(settings.mongodb_sales_uri, tz_aware=True)[settings.mongodb_sales_db]
     coll_cards = db["Cards"]
     coll_prices = db["Prices"]
     # i campi PriceCharting vanno in PricesGraded, collegati alla riga di Prices dallo stesso _id
@@ -533,6 +542,13 @@ def main() -> int:
                     last_pc = latest_pricecharting(db, item_id)
                     if last_pc is not None:
                         redline_row = {**row, "pricePriceCharting": last_pc}
+                # gradati per _cardmarket_low_as_price: servono solo con Cardmarket senza vendite
+                if _cardmarket_has_no_sales(row) and not any(row.get(f) for f in GRADED_REFERENCE_FIELDS):
+                    graded = [latest_graded_max(db, item_id, GRADED_REFERENCE_FIELDS),
+                              latest_cards_metrics_psa10(sales_db, item_id)]
+                    graded_max = max((g for g in graded if g), default=None)
+                    if graded_max is not None:
+                        redline_row = {**redline_row, GRADED_MAX_KEY: graded_max}
                 price_redline = _compute_price_redline(redline_row)
                 if price_redline is not None:
                     row["priceRedLine"] = price_redline

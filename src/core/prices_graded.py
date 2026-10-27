@@ -134,6 +134,26 @@ def latest_pricecharting(db: Database, item_id: Any) -> Optional[float]:
     return doc.get("pricePriceCharting") if doc else None
 
 
+def latest_graded_max(db: Database, item_id: Any, fields: Iterable[str]) -> Optional[float]:
+    """Il piu' alto tra gli ultimi valori > 0 dei campi gradati `fields` della carta in PricesGraded."""
+    values = []
+    for field in fields:
+        doc = db[PRICES_GRADED_COLLECTION].find_one(
+            {"itemId": item_id, field: {"$gt": 0}}, {field: 1}, sort=[("createdAt", -1)]
+        )
+        if doc:
+            values.append(doc[field])
+    return max(values) if values else None
+
+
+def latest_cards_metrics_psa10(sales_db: Database, item_id: Any) -> Optional[float]:
+    """PSA 10 di CardsMetrics (latestPrice del documento piu' recente): lo stesso fallback di getMarketData."""
+    doc = sales_db["CardsMetrics"].find_one(
+        {"cardId": item_id, "latestPrice": {"$gt": 0}}, {"latestPrice": 1}, sort=[("createdAt", -1)]
+    )
+    return doc.get("latestPrice") if doc else None
+
+
 def _load_graded(db: Database, query: Dict[str, Any], wanted: List[str]) -> List[Dict[str, Any]]:
     projection = {field: 1 for field in wanted}
     projection.update({"itemId": 1, "createdAt": 1})
