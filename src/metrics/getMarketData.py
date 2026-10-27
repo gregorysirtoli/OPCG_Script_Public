@@ -385,52 +385,78 @@ def _round2(n: Optional[float]) -> Optional[float]:
     return float(f"{n:.2f}")
 
 
+# Con vendite reali trend e medie Cardmarket non coincidono mai tutte: se sono identiche il valore
+# e' un riempitivo di Cardmarket per un prodotto senza transazioni (es. promo CS 25-26 a $67 con
+# low a $195k e PSA 10 a $130k).
+CM_NO_SALES_FIELDS = ("cmPriceTrend", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg30d")
+# Low e trend Cardmarket oltre questo rapporto (in un senso o nell'altro) non descrivono lo stesso
+# mercato: trend finto o annuncio fuori mercato/sbagliato.
+CM_LOW_TREND_MAX_RATIO = 10.0
+# Sotto questo prezzo (USD) il rapporto low/trend e' rumore (0.02 contro 0.25 e' gia' 12x).
+CM_LOW_TREND_MIN_PRICE_USD = 5.0
+# Scarti tra fonti entro questa cifra (USD) non contano come disaccordo (carte da pochi centesimi).
+CONFIDENCE_ABS_TOLERANCE_USD = 0.5
+
+
+def _is_cardmarket_unreliable(doc: Optional[Dict[str, Any]]) -> bool:
+    """True se i prezzi Cardmarket della riga si contraddicono: vanno esclusi da priceRedLine."""
+    doc = doc or {}
+    no_sales_values = [_to_positive_number(doc.get(key)) for key in CM_NO_SALES_FIELDS]
+    if all(v is not None for v in no_sales_values) and max(no_sales_values) - min(no_sales_values) < 1e-6:
+        return True
+
+    trend = _to_positive_number(doc.get("cmPriceTrend"))
+    low = _to_positive_number(doc.get("cmPriceLow"))
+    if trend is not None and low is not None and max(trend, low) >= CM_LOW_TREND_MIN_PRICE_USD:
+        ratio = low / trend
+        if ratio > CM_LOW_TREND_MAX_RATIO or ratio < 1.0 / CM_LOW_TREND_MAX_RATIO:
+            return True
+    return False
+
+
 def _compute_price_confidence_score(
-    price_primary: Optional[float],
-    price_trend: Optional[float],
-    price_secondary: Optional[float],
-    price_tertiary: Optional[float],
-    price_cardtrader: Optional[float],
-    price_pricecharting: Optional[float],
+    doc: Optional[Dict[str, Any]],
     price_7d: Optional[float],
     price_30d: Optional[float],
 ) -> Optional[float]:
-    """Returns a weighted 0-1 score indicating how many independent price sources
-    corroborate the displayed price. Higher = more reliable.
+    """Punteggio 0-1 di affidabilita' di priceRedLine.
+    0.85 dalle fonti indipendenti (copertura fino a 3 fonti x accordo tra loro), 0.15 dallo storico
+    a 7 e 30 giorni. Cardmarket conta come una sola fonte, ed e' esclusa se incoerente.
+    0 = c'erano prezzi ma sono stati scartati tutti (priceRedLine null, bassa affidabilita');
+    None = nessun prezzo.
     """
-    price_primary = _to_positive_number(price_primary)
-    price_trend = _to_positive_number(price_trend)
-    price_secondary = _to_positive_number(price_secondary)
-    price_tertiary = _to_positive_number(price_tertiary)
-    price_cardtrader = _to_positive_number(price_cardtrader)
-    price_pricecharting = _to_positive_number(price_pricecharting)
-    price_7d = _to_positive_number(price_7d)
-    price_30d = _to_positive_number(price_30d)
+    doc = doc or {}
+    cm_unreliable = _is_cardmarket_unreliable(doc)
+    cardmarket = None
+    if not cm_unreliable:
+        cardmarket = _to_positive_number(doc.get("cmPriceTrend")) or _to_positive_number(doc.get("cmAvg30d"))
+    sources = [
+        v for v in (
+            _to_positive_number(doc.get("pricePrimary")),
+            cardmarket,
+            _to_positive_number(doc.get("priceYuyuTei")),
+            _to_positive_number(doc.get("pricePriceCharting")),
+            _to_positive_number(doc.get("priceCardTrader")),
+        )
+        if v is not None
+    ]
+    if not sources:
+        return 0.0 if cm_unreliable else None
 
-    score = 0.0
-    if price_primary is not None or price_trend is not None:
-        score += 0.50
-    if price_secondary is not None:
-        score += 0.25
-    if price_tertiary is not None:
-        score += 0.35
-    if price_pricecharting is not None:
-        score += 0.25
-    if price_cardtrader is not None:
-        score += 0.15
-    if price_7d is not None:
-        score += 0.10
-    if price_30d is not None:
-        score += 0.10
-    return _round2(score) if score > 0 else None
+    mid = median(sources)
+    dispersion = max(max(abs(v - mid) - CONFIDENCE_ABS_TOLERANCE_USD, 0.0) for v in sources) / mid
+    # accordo pieno fino al 25% di scarto dalla mediana, nullo dal 100%
+    agreement = 1.0 - min(max((dispersion - 0.25) / 0.75, 0.0), 1.0)
+    coverage = min(len(sources), 3) / 3.0
+    history = (int(_to_positive_number(price_7d) is not None) + int(_to_positive_number(price_30d) is not None)) / 2.0
+    return _round2(0.85 * coverage * agreement + 0.15 * history)
 
 
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
+    cardmarket_keys = () if _is_cardmarket_unreliable(doc) else ("cmPriceTrend", "cmPriceLow", "cmAvg30d")
     redline_values = [
         _to_positive_number((doc or {}).get("pricePrimary")),
-        _to_positive_number((doc or {}).get("cmPriceTrend")),
-        _to_positive_number((doc or {}).get("cmPriceLow")),
-        _to_positive_number((doc or {}).get("cmAvg30d")),
+        *(_to_positive_number((doc or {}).get(key)) for key in cardmarket_keys),
         _to_positive_number((doc or {}).get("priceYuyuTei")),
         _to_positive_number((doc or {}).get("pricePriceCharting")),
         _to_positive_number((doc or {}).get("priceCardTrader")),
@@ -491,7 +517,8 @@ def _weighted_median(pairs: List[Dict[str, float]]) -> float:
 
 
 def _pick_market_price(md: Optional[Dict[str, Any]]) -> Optional[float]:
-    if not isinstance(md, dict):
+    # priceConfidenceScore 0: prezzi scartati, i campi grezzi (priceTrend, ...) non vanno ripescati
+    if not isinstance(md, dict) or md.get("priceConfidenceScore") == 0:
         return None
     for key in (
         "price",
@@ -1377,7 +1404,7 @@ def compute_market_data_for_item(
     cm_trend = _to_number((latest or {}).get("cmPriceTrend"))
     cm_low   = _to_number((latest or {}).get("cmPriceLow"))
 
-    if cm_trend is not None and cm_trend > 0 and cm_low is not None:
+    if cm_trend is not None and cm_trend > 0 and cm_low is not None and not _is_cardmarket_unreliable(latest):
         # quanto il low è "scontato" rispetto al trend, in %
         low_vs_trend_discount_pct = _round2(((cm_trend - cm_low) / cm_trend) * 100.0)
     else:
@@ -1608,16 +1635,7 @@ def compute_market_data_for_item(
         "sales7d": sales_7d_estimate, # STIMA unita' vendute, da calo listing (non conteggio reale)
         "sales30d": sales_30d_estimate, # STIMA unita' vendute, da calo listing (non conteggio reale)
         "gradingAttractivenessScore": grading_attractiveness_score, # 0..100
-        "priceConfidenceScore": _compute_price_confidence_score(
-            price_primary=_as_number_or_none((latest or {}).get("pricePrimary")),
-            price_trend=_as_number_or_none(cm_trend),
-            price_secondary=_as_number_or_none(price_secondary),
-            price_tertiary=_as_number_or_none(price_tertiary),
-            price_cardtrader=_as_number_or_none(price_cardtrader),
-            price_pricecharting=_as_number_or_none((latest or {}).get("pricePriceCharting")),
-            price_7d=price_7d,
-            price_30d=price_30d,
-        ), # 0..1
+        "priceConfidenceScore": _compute_price_confidence_score(latest, price_7d, price_30d), # 0..1, 0 = prezzo scartato
 
         # ledger-style derived calls
         "priceBand": price_band,

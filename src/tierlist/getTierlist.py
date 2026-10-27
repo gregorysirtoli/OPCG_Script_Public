@@ -41,7 +41,8 @@ def calcola_icv(prezzi_oltre_10: List[float]) -> float:
 # ============================================================
 def pick_price_from_card(card: Dict[str, Any]) -> Optional[float]:
     md = card.get("marketData")
-    if not isinstance(md, dict):
+    # priceConfidenceScore 0: prezzi scartati, i campi grezzi (priceTrend, ...) non vanno ripescati
+    if not isinstance(md, dict) or md.get("priceConfidenceScore") == 0:
         return None
 
     for k in (

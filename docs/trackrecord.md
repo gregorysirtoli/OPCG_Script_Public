@@ -81,7 +81,11 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
 
 - **Prezzo**: `priceRedLine`, mediana delle fonti della riga di Prices (`pricePrimary`, Cardmarket trend,
   low e media 30 gg, CardTrader, PriceCharting, Yuyu-tei), in USD. Ingresso = prezzo del giorno della chiamata. Uscita = mediana dei prezzi
-  giornalieri tra t+h-3 e t+h+3 giorni.
+  giornalieri tra t+h-3 e t+h+3 giorni. Cardmarket resta fuori dalla mediana quando trend e medie sono tutte
+  identiche (nessuna vendita reale) o low e trend distano piu' di 10x (sopra $5); se non restano altre fonti
+  `priceRedLine` e' null e `priceConfidenceScore` e' 0. `priceConfidenceScore` va da 0 a 1 (fonti indipendenti
+  x accordo tra loro, piu' lo storico); le chiamate registrate prima del 2026-10-27 usano la scala precedente
+  (somma di pesi per campo, fino a 1.60).
 - **Soglia di costo** = `SELL_FEE_PCT` + `SHIPPING_COST_USD` / prezzo. Rendimento netto = lordo - soglia.
 - **Mercato**: mediana del rendimento di tutte le carte dello stesso tipo e fascia nello stesso periodo
   (serve un gruppo di almeno 30 carte, altrimenti si usa la fascia senza tipo).
