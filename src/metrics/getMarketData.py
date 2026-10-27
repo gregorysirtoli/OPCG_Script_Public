@@ -395,8 +395,10 @@ CM_NO_SALES_FIELDS = ("cmPriceTrend", "cmPriceAvg", "cmAvg1d", "cmAvg7d", "cmAvg
 CM_LOW_TREND_MAX_RATIO = 10.0
 # Sotto questo prezzo (USD) il rapporto low/trend e' rumore (0.02 contro 0.25 e' gia' 12x).
 CM_LOW_TREND_MIN_PRICE_USD = 5.0
-# Scarti tra fonti entro questa cifra (USD) non contano come disaccordo (carte da pochi centesimi).
-CONFIDENCE_ABS_TOLERANCE_USD = 0.5
+# Scarti tra fonti entro questa cifra (USD) non contano come disaccordo: PriceCharting tiene le carte
+# giapponesi da pochi centesimi intorno a $1.5-2.2 (ottobre 2026: con $0.5 finiva sotto 0.40 il 42%
+# delle JP, con $2 l'11%; sopra $20 non cambia quasi nulla).
+CONFIDENCE_ABS_TOLERANCE_USD = 2.0
 
 
 def _cardmarket_has_no_sales(doc: Optional[Dict[str, Any]]) -> bool:
