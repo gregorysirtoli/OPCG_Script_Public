@@ -402,9 +402,11 @@ CONFIDENCE_ABS_TOLERANCE_USD = 2.0
 
 
 def _cardmarket_has_no_sales(doc: Optional[Dict[str, Any]]) -> bool:
-    """True se trend e medie Cardmarket sono tutte identiche: tutto Cardmarket esce da priceRedLine."""
-    values = [_to_positive_number((doc or {}).get(key)) for key in CM_NO_SALES_FIELDS]
-    return all(v is not None for v in values) and max(values) - min(values) < 1e-6
+    """True se trend e medie Cardmarket presenti (almeno 3) sono tutte identiche: Cardmarket non conta
+    nello score e, se e' l'unica fonte, priceRedLine e' null. cmPriceAvg a volte manca (es. Law CS 2023
+    TPP: trend e medie a $0.78)."""
+    values = [v for v in (_to_positive_number((doc or {}).get(key)) for key in CM_NO_SALES_FIELDS) if v is not None]
+    return len(values) >= 3 and max(values) - min(values) < 1e-6
 
 
 def _cardmarket_low_mismatch(doc: Optional[Dict[str, Any]]) -> bool:
@@ -424,15 +426,18 @@ def _compute_price_confidence_score(
 ) -> Optional[float]:
     """Punteggio 0-1 di affidabilita' di priceRedLine.
     0.85 dalle fonti indipendenti (copertura fino a 3 fonti x accordo tra loro), 0.15 dallo storico
-    a 7 e 30 giorni. Cardmarket conta come una sola fonte, ed e' esclusa se senza vendite.
+    a 7 e 30 giorni. Cardmarket conta come una sola fonte; se senza vendite non conta nella copertura
+    ma entra nell'accordo, perche' resta nella mediana di priceRedLine quando ci sono altre fonti.
     0 = c'erano prezzi ma sono stati scartati tutti (priceRedLine null, bassa affidabilita');
     None = nessun prezzo.
     """
     doc = doc or {}
     cm_no_sales = _cardmarket_has_no_sales(doc)
-    cardmarket = None
-    if not cm_no_sales:
-        cardmarket = _to_positive_number(doc.get("cmPriceTrend")) or _to_positive_number(doc.get("cmAvg30d"))
+    cardmarket = _to_positive_number(doc.get("cmPriceTrend")) or _to_positive_number(doc.get("cmAvg30d"))
+    if cm_no_sales:
+        cardmarket_stale, cardmarket = cardmarket, None
+    else:
+        cardmarket_stale = None
     sources = [
         v for v in (
             _to_positive_number(doc.get("pricePrimary")),
@@ -446,8 +451,9 @@ def _compute_price_confidence_score(
     if not sources:
         return 0.0 if cm_no_sales else None
 
-    mid = median(sources)
-    dispersion = max(max(abs(v - mid) - CONFIDENCE_ABS_TOLERANCE_USD, 0.0) for v in sources) / mid
+    priced = sources + ([cardmarket_stale] if cardmarket_stale is not None else [])
+    mid = median(priced)
+    dispersion = max(max(abs(v - mid) - CONFIDENCE_ABS_TOLERANCE_USD, 0.0) for v in priced) / mid
     # accordo pieno fino al 25% di scarto dalla mediana, nullo dal 100%
     agreement = 1.0 - min(max((dispersion - 0.25) / 0.75, 0.0), 1.0)
     coverage = min(len(sources), 3) / 3.0
@@ -456,20 +462,23 @@ def _compute_price_confidence_score(
 
 
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
-    if _cardmarket_has_no_sales(doc):
+    other_values = [
+        _to_positive_number((doc or {}).get(key))
+        for key in ("pricePrimary", "priceYuyuTei", "pricePriceCharting", "priceCardTrader")
+    ]
+    other_values = [value for value in other_values if value is not None]
+    # Cardmarket senza vendite esce solo se e' l'unica fonte: con altre fonti resta nella mediana,
+    # che cosi' assorbe una singola fonte mappata male (es. Crocodile Offline Regional 2023 Winner:
+    # Cardmarket fermo a $1.1k, PriceCharting $1.60 della carta base). Lo score lo conta comunque
+    # come fonte non valida.
+    if _cardmarket_has_no_sales(doc) and not other_values:
         cardmarket_keys: Tuple[str, ...] = ()
     elif _cardmarket_low_mismatch(doc):
         cardmarket_keys = ("cmPriceTrend", "cmAvg30d")
     else:
         cardmarket_keys = ("cmPriceTrend", "cmPriceLow", "cmAvg30d")
-    redline_values = [
-        _to_positive_number((doc or {}).get("pricePrimary")),
-        *(_to_positive_number((doc or {}).get(key)) for key in cardmarket_keys),
-        _to_positive_number((doc or {}).get("priceYuyuTei")),
-        _to_positive_number((doc or {}).get("pricePriceCharting")),
-        _to_positive_number((doc or {}).get("priceCardTrader")),
-    ]
-    redline_values = [value for value in redline_values if value is not None]
+    cardmarket_values = [_to_positive_number((doc or {}).get(key)) for key in cardmarket_keys]
+    redline_values = other_values + [value for value in cardmarket_values if value is not None]
     return _round2(median(redline_values)) if redline_values else None
 
 
