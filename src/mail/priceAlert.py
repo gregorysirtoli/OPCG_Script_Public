@@ -1,5 +1,6 @@
 import asyncio
 import decimal
+import html
 import os
 import random
 import re
@@ -12,6 +13,14 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 
 from src.core.notifications import enqueue_notification, ensure_notification_indexes
+from src.mail.emailTemplates import (
+    BORDER,
+    TEXT,
+    SITE_URL,
+    common_values,
+    load_email_template,
+    render_email_template,
+)
 from src.metrics.getMarketData import _compute_price_redline
 
 # =============================================================================
@@ -30,6 +39,7 @@ CREDIT_COST = 10
 MAX_RANDOM_DELAY_HOURS = 12
 MAX_RANDOM_DELAY_MINUTES = MAX_RANDOM_DELAY_HOURS * 60
 MIN_DELTA_HOURS = MAX_RANDOM_DELAY_HOURS
+EMAIL_TEMPLATE = "price-alert"
 
 decimal.getcontext().prec = 10
 
@@ -46,7 +56,7 @@ def D(x) -> decimal.Decimal:
 
 
 def format_money(value: decimal.Decimal) -> str:
-    return f"${value:.2f}"
+    return f"${value:,.2f}"
 
 
 def normalize_dt(dt):
@@ -98,7 +108,7 @@ def clean_card_name(card: dict) -> tuple[str, str, str]:
 
 
 def unsubscribe_link(user_id, alert_id, item_id) -> str:
-    return f"https://redline.cards/api/alerts/unsubscribe?u={user_id}&_id={alert_id}&i={item_id}"
+    return f"{SITE_URL}/api/alerts/unsubscribe?u={user_id}&_id={alert_id}&i={item_id}"
 
 
 def build_card_links(card: dict, clean_name: str, local_id: str) -> dict[str, str]:
@@ -243,38 +253,36 @@ def build_triggered_item(alert_doc: dict, now_utc: datetime) -> dict:
     }
 
 
-def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
-    links = item["links"]
-    tcg_link = links.get("tcgplayer")
-
-    return (
-        "Hi,<br>we have good news for you! <br><br>"
-        "One of the cards you have been looking for has reached your price alert.<br><br>"
-        f"<b>{item['cleanName']} #{item['localId']}</b> card is currently at "
-        f"<b>{format_money(item['hitPrice'])}</b>.<br><br>"
-        "Don't miss this opportunity!<br>"
-        "<ul>"
-        f"<li>Check it out on <a href='{links['cardmarket']}'>Cardmarket</a></li>"
-        + (f"<li>Check it out on <a href='{tcg_link}'>TCGPlayer</a></li>" if tcg_link else "")
-        + f"<li>Check it out on <a href='{links['ebay']}'>Ebay</a></li>"
-        + f"<li>Check it out on <a href='{links['cardtrader']}'>CardTrader</a></li>"
-        "</ul>"
-        f"<br>Price alerts and stamps are observations from our market data, not financial advice."
-        f"<br>This email was sent to {to_email} because on date {item['createdAtStr']} "
-        f"you have set up an alert for the card {item['cardName']} on Red Line "
-        "(https://redline.cards/).<br>"
-        "If you wish to stop receiving alerts and notifications, you can "
-        f"<a href='{unsubscribe_link(item['userId'], item['alertId'], item['itemId'])}'>unsubscribe</a> any time.<br>"
-        "This is a free notification service of the Red Line website (https://redline.cards/).<br><br>"
-        "______<br><br>"
-        "<i>This e-mail may contain confidential and/or privileged information.<br>"
-        "If you are not the intended recipient or have received this e-mail in error, please notify "
-        "the sender immediately and delete this e-mail.<br>"
-        "Any unauthorized copying, disclosure, or distribution of the material contained in this "
-        "e-mail is strictly prohibited</i>.<br><br>"
-        f"### This is an automatically generated message on UTC "
-        f"{now_utc.strftime('%Y-%m-%d %H:%M:%S')} ###<br><br>"
+def marketplace_links_html(links: dict[str, str]) -> str:
+    """Pulsanti secondari (bordo grigio) verso i marketplace, uno per riga: TCGplayer solo se c'e' l'id."""
+    labels = [("cardmarket", "Cardmarket"), ("tcgplayer", "TCGplayer"), ("ebay", "eBay"), ("cardtrader", "CardTrader")]
+    cells = "".join(
+        "<tr><td style='padding:0 0 8px 0'>"
+        f"<a href='{html.escape(links[key], quote=True)}' style='display:block;text-align:center;"
+        f"border:1px solid {BORDER};border-radius:6px;padding:10px 12px;font-size:14px;font-weight:700;"
+        f"color:{TEXT};text-decoration:none'>{label}</a>"
+        "</td></tr>"
+        for key, label in labels
+        if links.get(key)
     )
+    return (
+        "<table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%'>"
+        f"{cells}</table>"
+    )
+
+
+def build_single_body(to_email: str, item: dict, now_utc: datetime) -> str:
+    return render_email_template(EMAIL_TEMPLATE, {
+        **common_values(now_utc),
+        "email": to_email,
+        "cardName": item["cleanName"],
+        "localId": item["localId"],
+        "price": format_money(item["hitPrice"]),
+        "cardUrl": f"{SITE_URL}/cards/{item['itemId']}",
+        "marketplaceLinksHtml": marketplace_links_html(item["links"]),
+        "alertCreatedAt": item["createdAtStr"],
+        "unsubscribeUrl": unsubscribe_link(item["userId"], item["alertId"], item["itemId"]),
+    })
 
 
 def build_notification_text(item: dict) -> str:
@@ -294,6 +302,8 @@ async def main() -> None:
     account_client = MongoClient(MONGODB_ACCOUNT_URI)
     account_db = account_client[MONGODB_ACCOUNT_DB]
     ensure_notification_indexes(account_db)
+    # se il sito non risponde ci si ferma prima di scalare crediti e accodare
+    load_email_template(EMAIL_TEMPLATE)
 
     alerts = list(market_db.PricesAlert.aggregate([
         {

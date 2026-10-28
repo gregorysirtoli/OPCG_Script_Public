@@ -1,3 +1,4 @@
+import html
 import os
 import re
 import traceback
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 
 from src.core.notifications import enqueue_notification, ensure_notification_indexes
+from src.mail.emailTemplates import SITE_URL, common_values, load_email_template, render_email_template
 
 # =============================================================================
 # Environment & constants
@@ -20,7 +22,27 @@ MONGODB_DB = os.environ["MONGODB_DB"]
 MONGODB_ACCOUNT_URI = os.environ["MONGODB_ACCOUNT_URI"]
 MONGODB_ACCOUNT_DB = os.environ["MONGODB_ACCOUNT_DB"]
 
-CARD_LINK_BASE = "http://redline.cards/cards"
+CARD_LINK_BASE = f"{SITE_URL}/cards"
+EMAIL_TEMPLATE = "stamp-alert"
+
+# Etichette degli stamp come sul sito (OPCG lib/ledger-stamps.ts, STAMP_LABELS).
+STAMP_LABELS = {
+    "ACCUMULATE": "Accumulate",
+    "HOLD": "Neutral",
+    "SELL_WATCH": "Sell Watch",
+    "REBOUND_WATCH": "Speculative",  # "Rebound Watch"
+    "BUY_SETUP": "Buy Setup",
+}
+
+# Colori dei badge come sul sito in tema chiaro (lib/ledger-stamps.ts STAMP_KEY_CLASS e STAMP_STYLE,
+# misurati con i CSS del sito): (testo, sfondo, bordo).
+STAMP_BADGE_COLORS = {
+    "ACCUMULATE": ("#22c55e", "#d1e7dd", "#e6e6e6"),
+    "HOLD": ("#141824", "#e2e3e5", "#e6e6e6"),
+    "SELL_WATCH": ("#ef4444", "#f8d7da", "#e6e6e6"),
+    "REBOUND_WATCH": ("#7c3aed", "#ede9fe", "#c4b5fd"),
+    "BUY_SETUP": ("#3b82f6", "#cff4fc", "#e6e6e6"),
+}
 
 
 # =============================================================================
@@ -47,7 +69,25 @@ def card_link(item_id) -> str:
 
 
 def unsubscribe_link(user_id, alert_id, item_id) -> str:
-    return f"https://redline.cards/api/alerts/stamp/unsubscribe?u={user_id}&_id={alert_id}&i={item_id}"
+    return f"{SITE_URL}/api/alerts/stamp/unsubscribe?u={user_id}&_id={alert_id}&i={item_id}"
+
+
+def stamp_label(stamp_key: str | None) -> str:
+    return STAMP_LABELS.get(stamp_key or "") or stamp_key or "—"
+
+
+def stamp_badge_html(stamp_key: str | None) -> str:
+    """Badge dello stamp come sul sito; senza stamp precedente solo un trattino."""
+    colors = STAMP_BADGE_COLORS.get(stamp_key or "")
+    label = stamp_label(stamp_key)
+    if not colors:
+        return html.escape(label)
+    color, background, border = colors
+    return (
+        f"<span style='display:inline-block;padding:4px 9px;border:1px solid {border};border-radius:4px;"
+        f"background-color:{background};color:{color};font-size:12px;font-weight:700;line-height:1.2;"
+        f"white-space:nowrap;vertical-align:middle'>{html.escape(label)}</span>"
+    )
 
 
 def normalize_dt(dt):
@@ -88,33 +128,25 @@ def build_body(
     now_utc: datetime,
     unsubscribe_url: str,
 ) -> str:
-    return (
-        "Hi,<br>we have good news for you! <br><br>"
-        "One of your cards changed verdict in this morning's run. Worth a look!<br><br>"
-        f"<b>{card_name}</b><br>"
-        f"{set_id} &middot; {local_id} &middot; {price_str}<br>"
-        f"{old_stamp} &rarr; {new_stamp}<br><br>"
-        f"Here's the link <a href='{link}'>{link}</a><br>"
-        "<br>Price alerts and stamps are observations from our market data, not financial advice.<br>"
-        f"This email was sent to {to_email} because on date {created_at_str} "
-        f"you have set up an alert for the card {card_name} on Red Line "
-        "(https://redline.cards/).<br>"
-        "If you wish to stop receiving alerts and notifications, you can "
-        f"<a href='{unsubscribe_url}'>unsubscribe</a> any time.<br>"
-        "This is a free notification service of the Red Line website (https://redline.cards/).<br><br>"
-        "______<br><br>"
-        "<i>This e-mail may contain confidential and/or privileged information.<br>"
-        "If you are not the intended recipient or have received this e-mail in error, please notify "
-        "the sender immediately and delete this e-mail.<br>"
-        "Any unauthorized copying, disclosure, or distribution of the material contained in this "
-        "e-mail is strictly prohibited</i>.<br><br>"
-        f"### This is an automatically generated message on UTC "
-        f"{now_utc.strftime('%Y-%m-%d %H:%M:%S')} ###<br><br>"
-    )
+    return render_email_template(EMAIL_TEMPLATE, {
+        **common_values(now_utc),
+        "email": to_email,
+        "cardName": card_name,
+        "setId": set_id,
+        "localId": local_id,
+        "price": price_str,
+        "oldStamp": stamp_label(old_stamp),
+        "newStamp": stamp_label(new_stamp),
+        "oldStampHtml": stamp_badge_html(old_stamp),
+        "newStampHtml": stamp_badge_html(new_stamp),
+        "cardUrl": link,
+        "alertCreatedAt": created_at_str,
+        "unsubscribeUrl": unsubscribe_url,
+    })
 
 
 def build_notification_text(card_name: str, local_id: str, old_stamp: str, new_stamp: str) -> str:
-    return f"{card_name} #{local_id} changed stamp: {old_stamp} -> {new_stamp}"
+    return f"{card_name} #{local_id} changed stamp: {stamp_label(old_stamp)} -> {stamp_label(new_stamp)}"
 
 
 # =============================================================================
@@ -127,6 +159,7 @@ def main() -> None:
     account_client = MongoClient(MONGODB_ACCOUNT_URI)
     account_db = account_client[MONGODB_ACCOUNT_DB]
     ensure_notification_indexes(account_db)
+    load_email_template(EMAIL_TEMPLATE)  # se il sito non risponde ci si ferma prima di accodare
 
     alerts = list(market_db.StampAlert.find({}))
     if not alerts:
@@ -180,7 +213,7 @@ def main() -> None:
         created_at = normalize_dt(alert.get("createdAt"))
         created_at_str = created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if created_at else "—"
 
-        subject = f"[RED LINE] {card_name} #{local_id} stamp changed to {current_key}!"
+        subject = f"[RED LINE] {card_name} #{local_id} stamp changed to {stamp_label(current_key)}!"
         body = build_body(
             to_email, card_name, set_id, local_id, price_str,
             old_key or "—", current_key, link, created_at_str, now,

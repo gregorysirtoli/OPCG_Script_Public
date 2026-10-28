@@ -1,3 +1,4 @@
+import html
 import os
 import traceback
 from datetime import datetime, timezone
@@ -8,6 +9,18 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 
 from src.core.notifications import enqueue_notification, ensure_notification_indexes
+from src.mail.emailTemplates import (
+    BORDER,
+    LINK,
+    MUTED,
+    NEGATIVE,
+    POSITIVE,
+    SITE_URL,
+    TEXT,
+    common_values,
+    load_email_template,
+    render_email_template,
+)
 
 # =============================================================================
 # Environment & constants
@@ -26,8 +39,10 @@ TOP_NEWEST = 5
 TOP_ITEMS = 10
 TOP_PRODUCTS = 10
 SNAPSHOT_COLLECTION = "PortfolioSnapshots"
-PORTFOLIO_URL = "https://redline.cards/account/portfolio"
-CARD_URL_BASE = "https://redline.cards/cards"
+PORTFOLIO_URL = f"{SITE_URL}/account/portfolio"
+CARD_URL_BASE = f"{SITE_URL}/cards"
+ACCOUNT_URL = f"{SITE_URL}/account"
+EMAIL_TEMPLATE = "monthly-report"
 
 
 # =============================================================================
@@ -89,24 +104,20 @@ def add_months(dt: datetime, months: int) -> datetime:
     return dt.replace(year=year, month=month, day=day)
 
 
-def money_html(value: float) -> str:
-    color = "#059669" if value > 0 else ("#dc2626" if value < 0 else "#374151")
-    sign = "+" if value > 0 else ""
-    return f"<span style='color:{color};font-weight:700'>{sign}${value:,.2f}</span>"
+def money_text(value: float) -> str:
+    return f"${value:,.2f}"
 
 
-def money_bold_plain(value: float) -> str:
-    return f"<b>${value:,.2f}</b>"
-
-
-def pct_html(value: float | None) -> str:
+def delta_html(value: float | None, pct: float | None) -> str:
+    """Variazione in dollari e %, verde se positiva e rossa se negativa; N/A senza storico."""
     if value is None:
-        return "<span style='color:#6b7280'>N/A</span>"
-    color = "#059669" if value > 0 else ("#dc2626" if value < 0 else "#374151")
-    sign = "+" if value > 0 else ""
-    pct_text = f"{abs(value):.2f}".replace(".", ",")
-    sign_text = "+" if value > 0 else ("-" if value < 0 else "")
-    return f"<span style='color:{color};font-weight:700'>{sign_text}{pct_text}%</span>"
+        return f"<span style='color:{MUTED}'>N/A</span>"
+    color = POSITIVE if value > 0 else (NEGATIVE if value < 0 else TEXT)
+    sign = "+" if value > 0 else ("-" if value < 0 else "")
+    text = f"{sign}${abs(value):,.2f}"
+    if pct is not None:
+        text += f" ({sign}{abs(pct):.2f}%)"
+    return f"<strong style='color:{color}'>{text}</strong>"
 
 
 def pick_unit_price(card_doc: dict[str, Any]) -> float:
@@ -346,20 +357,13 @@ def build_report_html(
     delta_month_pct = (delta_month / (current_value - delta_month) * 100.0) if delta_month is not None and (current_value - delta_month) > 0 else None
     delta_year_pct = (delta_year / (current_value - delta_year) * 100.0) if delta_year is not None and (current_value - delta_year) > 0 else None
 
-    def render_value_line(v: float | None) -> str:
-        if v is None:
-            return "<span style='color:#6b7280'>N/A</span>"
-        return money_html(v)
-
-    def linked_item_name(row: dict[str, Any]) -> str:
+    def item_name_html(row: dict[str, Any]) -> str:
+        name = html.escape(str(row.get("name") or "Unknown"))
         item_id = row.get("id")
         if item_id is None:
-            return str(row.get("name") or "Unknown")
-        return f"<a href='{CARD_URL_BASE}/{str(item_id)}'>{row.get('name') or 'Unknown'}</a>"
-
-    lines_sets = "".join(
-        f"<li>{s['name']}: {money_bold_plain(s['value'])}</li>" for s in top_sets
-    ) or "<li><span style='color:#6b7280'>No data</span></li>"
+            return name
+        href = html.escape(f"{CARD_URL_BASE}/{item_id}", quote=True)
+        return f"<a href='{href}' style='color:{TEXT};text-decoration:none'>{name}</a>"
 
     def fmt_added_date(row: dict[str, Any]) -> str:
         d = row.get("addedAt")
@@ -367,45 +371,55 @@ def build_report_html(
             return f"{d.strftime('%B')} {d.day}, {d.year}"
         return "N/A"
 
-    lines_newest = "".join(
-        f"<li>{linked_item_name(x)} - {fmt_added_date(x)} - {money_bold_plain(x['value'])}</li>" for x in newest
-    ) or "<li><span style='color:#6b7280'>No recent additions available</span></li>"
+    def row_html(name_html: str, value: float, note: str = "") -> str:
+        note_html = f"<br><span style='font-size:12px;color:{MUTED}'>{html.escape(note)}</span>" if note else ""
+        return (
+            f"<tr><td style='padding:9px 0;border-top:1px solid {BORDER};font-size:14px;line-height:1.5;color:{TEXT}'>"
+            f"{name_html}{note_html}</td>"
+            f"<td align='right' style='padding:9px 0 9px 12px;border-top:1px solid {BORDER};font-size:14px;"
+            f"font-weight:700;white-space:nowrap;color:{TEXT}'>{money_text(value)}</td></tr>"
+        )
 
-    lines_items = "".join(
-        f"<li>{linked_item_name(x)} - {money_bold_plain(x['value'])}</li>" for x in top_items
-    ) or "<li><span style='color:#6b7280'>No card items</span></li>"
+    def section_html(title: str, rows_html: str, empty: str) -> str:
+        body = rows_html or (
+            f"<tr><td style='padding:9px 0;border-top:1px solid {BORDER};font-size:14px;color:{MUTED}'>{empty}</td></tr>"
+        )
+        return (
+            f"<h2 style='margin:28px 0 8px 0;font-size:16px;line-height:1.4;font-weight:700;color:{TEXT}'>{title}</h2>"
+            f"<table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%'>{body}</table>"
+        )
 
-    lines_products = "".join(
-        f"<li>{linked_item_name(x)} - {money_bold_plain(x['value'])}</li>" for x in top_products
-    ) or "<li><span style='color:#6b7280'>No non-card products</span></li>"
-
-    return (
-        f"Hi {user_name},<br>"
-        "here is your monthly collection report by Red Line.<br><br>"
-        "<h3>Collection Summary</h3>"
-        "<ul>"
-        f"<li><b>Current Value:</b> {money_html(current_value)}</li>"
-        f"<li><b>Change From Last Month:</b> {render_value_line(delta_month)} ({pct_html(delta_month_pct)})</li>"
-        f"<li><b>Change From Last Year:</b> {render_value_line(delta_year)} ({pct_html(delta_year_pct)})</li>"
-        "</ul>"
-        f"<a href='{PORTFOLIO_URL}'>Open your portfolio</a><br><br>"
-        "<h3>Most Valuable Sets</h3>"
-        f"<ul>{lines_sets}</ul>"
-        "<h3>Newest Additions</h3>"
-        f"<ul>{lines_newest}</ul>"
-        "<h3>Most Valuable Items (Cards)</h3>"
-        f"<ul>{lines_items}</ul>"
-        "<h3>Most Valuable Products (Non-Cards)</h3>"
-        f"<ul>{lines_products}</ul>"
-        f"<br><br><a href='{PORTFOLIO_URL}'>Open your portfolio</a><br><br>"
-        f"<br>This email was sent to {user_email} because you created a collection on RED LINE (https://redline.cards/)."
-        "<br>You can <a href='https://redline.cards/account'>unsubscribe</a> from these emails if you no longer want to receive them..<br>"
-        "______<br><br>"
-        "<i>This e-mail may contain confidential and/or privileged information.<br>"
-        "If you are not the intended recipient or have received this e-mail in error, please notify the sender immediately and delete this e-mail.<br>"
-        "Any unauthorized copying, disclosure, or distribution of the material contained in this e-mail is strictly prohibited.</i><br><br>"
-        f"### This is an automatically generated message on UTC {now.strftime('%Y-%m-%d %H:%M:%S')} ###<br><br>"
+    sections = "".join([
+        section_html("Most valuable sets", "".join(row_html(html.escape(s["name"]), s["value"]) for s in top_sets), "No data"),
+        section_html(
+            "Newest additions",
+            "".join(row_html(item_name_html(x), x["value"], f"Added {fmt_added_date(x)}") for x in newest),
+            "No recent additions available",
+        ),
+        section_html("Most valuable cards", "".join(row_html(item_name_html(x), x["value"]) for x in top_items), "No card items"),
+        section_html(
+            "Most valuable products",
+            "".join(row_html(item_name_html(x), x["value"]) for x in top_products),
+            "No non-card products",
+        ),
+    ])
+    sections += (
+        f"<p style='margin:20px 0 0 0;font-size:14px;line-height:1.6'>"
+        f"<a href='{PORTFOLIO_URL}' style='color:{LINK}'>See your full portfolio</a></p>"
     )
+
+    return render_email_template(EMAIL_TEMPLATE, {
+        **common_values(now),
+        "email": user_email,
+        "userName": user_name,
+        "monthLabel": now.strftime("%B %Y"),
+        "currentValue": money_text(current_value),
+        "deltaMonthHtml": delta_html(delta_month, delta_month_pct),
+        "deltaYearHtml": delta_html(delta_year, delta_year_pct),
+        "portfolioUrl": PORTFOLIO_URL,
+        "sectionsHtml": sections,
+        "unsubscribeUrl": ACCOUNT_URL,
+    })
 
 
 def should_send_report(account_db, user_doc: dict[str, Any], user_id: ObjectId, now: datetime) -> bool:
@@ -435,6 +449,7 @@ def main() -> None:
     account_client = MongoClient(MONGODB_ACCOUNT_URI)
     account_db = account_client[MONGODB_ACCOUNT_DB]
     ensure_notification_indexes(account_db)
+    load_email_template(EMAIL_TEMPLATE)  # se il sito non risponde ci si ferma prima di accodare
 
     now = datetime.now(timezone.utc)
 
