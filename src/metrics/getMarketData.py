@@ -397,6 +397,11 @@ CM_LOW_TREND_MAX_RATIO = 10.0
 # chiave non salvata in cui _carry_forward_pricecharting mette il piu' alto noto fino a quel giorno.
 GRADED_REFERENCE_FIELDS = ("psa10", "bsg10", "cgc10")
 GRADED_MAX_KEY = "_gradedMax"
+# _cardmarket_stale_contradicted: un gradato da almeno STALE_GRADED_MIN_USD che supera di oltre
+# STALE_GRADED_MAX_RATIO volte il valore fermo di Cardmarket lo smentisce. Il minimo in dollari
+# protegge le carte economiche, dove un PSA 10 da $50-150 sopra un raw da pochi centesimi e' normale.
+STALE_GRADED_MIN_USD = 1000.0
+STALE_GRADED_MAX_RATIO = 20.0
 # Sotto questo prezzo (USD) il rapporto low/trend e' rumore (0.02 contro 0.25 e' gia' 12x).
 CM_LOW_TREND_MIN_PRICE_USD = 5.0
 # Scarti tra fonti entro questa cifra (USD) non contano come disaccordo: PriceCharting tiene le carte
@@ -467,6 +472,34 @@ def _compute_price_confidence_score(
     return _round2(0.85 * coverage * agreement + 0.15 * history)
 
 
+def _graded_reference(doc: Dict[str, Any]) -> Optional[float]:
+    """Gradato piu' alto noto per la riga: GRADED_MAX_KEY se c'e', altrimenti psa10/bsg10/cgc10 della riga."""
+    own = [v for v in (_to_positive_number(doc.get(key)) for key in GRADED_REFERENCE_FIELDS) if v is not None]
+    return _to_positive_number(doc.get(GRADED_MAX_KEY)) or (max(own) if own else None)
+
+
+def _cardmarket_only_and_stale(doc: Dict[str, Any]) -> bool:
+    """Cardmarket senza vendite e nessun'altra fonte."""
+    return _cardmarket_has_no_sales(doc) and not any(
+        _to_positive_number(doc.get(key)) is not None
+        for key in ("pricePrimary", "priceYuyuTei", "pricePriceCharting", "priceCardTrader")
+    )
+
+
+def _cardmarket_stale_contradicted(doc: Optional[Dict[str, Any]], price: Optional[float]) -> bool:
+    """
+    True se Cardmarket senza vendite e' l'unica fonte e un gradato lo smentisce (vedi STALE_GRADED_*):
+    priceRedLine null. Es. Zoro CS 25-26 3rd Place: 60 EUR fermi (gli stessi della 1st Place), nessun
+    annuncio, PSA 10 $35k. Con un gradato in linea (es. Law Treasure Cup 2025: $3k, PSA 10 $12.6k) il
+    valore resta.
+    """
+    doc = doc or {}
+    if price is None or not _cardmarket_only_and_stale(doc):
+        return False
+    graded = _graded_reference(doc)
+    return graded is not None and graded >= STALE_GRADED_MIN_USD and graded > price * STALE_GRADED_MAX_RATIO
+
+
 def _cardmarket_low_as_price(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     """
     cmPriceLow come prezzo quando e' l'unico dato vivo: Cardmarket senza vendite, nessun'altra fonte,
@@ -476,17 +509,13 @@ def _cardmarket_low_as_price(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     (es. Otama Online Regional 2023: low 90.000 EUR tondi, PSA 10 $2k) e resta la mediana.
     """
     doc = doc or {}
-    if not _cardmarket_has_no_sales(doc):
-        return None
-    if any(_to_positive_number(doc.get(key)) is not None
-           for key in ("pricePrimary", "priceYuyuTei", "pricePriceCharting", "priceCardTrader")):
+    if not _cardmarket_only_and_stale(doc):
         return None
     trend = _to_positive_number(doc.get("cmPriceTrend")) or _to_positive_number(doc.get("cmAvg30d"))
     low = _to_positive_number(doc.get("cmPriceLow"))
     if trend is None or low is None or low <= trend * CM_LOW_TREND_MAX_RATIO:
         return None
-    own = [v for v in (_to_positive_number(doc.get(key)) for key in GRADED_REFERENCE_FIELDS) if v is not None]
-    graded = _to_positive_number(doc.get(GRADED_MAX_KEY)) or (max(own) if own else None)
+    graded = _graded_reference(doc)
     if graded is None or graded < low / 2.0:
         return None
     return low
@@ -494,7 +523,8 @@ def _cardmarket_low_as_price(doc: Optional[Dict[str, Any]]) -> Optional[float]:
 
 def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
     # Mediana di tutte le fonti, senza scarti: quanto il prezzo sia affidabile lo dice priceConfidenceScore.
-    # Unica eccezione il caso di _cardmarket_low_as_price.
+    # Eccezioni solo con Cardmarket senza vendite come unica fonte: _cardmarket_low_as_price e
+    # _cardmarket_stale_contradicted.
     low_price = _cardmarket_low_as_price(doc)
     if low_price is not None:
         return _round2(low_price)
@@ -508,7 +538,10 @@ def _compute_price_redline(doc: Optional[Dict[str, Any]]) -> Optional[float]:
         _to_positive_number((doc or {}).get("priceCardTrader")),
     ]
     redline_values = [value for value in redline_values if value is not None]
-    return _round2(median(redline_values)) if redline_values else None
+    price = _round2(median(redline_values)) if redline_values else None
+    if _cardmarket_stale_contradicted(doc, price):
+        return None
+    return price
 
 
 def _safe_round2(n: float) -> float:

@@ -81,12 +81,13 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
 
 - **Prezzo**: `priceRedLine`, mediana delle fonti della riga di Prices (`pricePrimary`, Cardmarket trend,
   low e media 30 gg, CardTrader, PriceCharting, Yuyu-tei), in USD. Ingresso = prezzo del giorno della chiamata. Uscita = mediana dei prezzi
-  giornalieri tra t+h-3 e t+h+3 giorni. Quando trend e medie Cardmarket presenti (almeno 3) sono identiche
-  (nessuna vendita reale) Cardmarket non conta nello score e, se e' l'unica fonte, `priceRedLine` e' null e
-  `priceConfidenceScore` e' 0; con altre fonti resta nella mediana. Il solo low resta fuori quando low e trend
-  distano piu' di 10x (sopra $5). `priceConfidenceScore` va da 0 a 1 (fonti indipendenti
-  x accordo tra loro, piu' lo storico); le chiamate registrate prima del 2026-10-27 usano la scala precedente
-  (somma di pesi per campo, fino a 1.60).
+  giornalieri tra t+h-3 e t+h+3 giorni. Eccezioni solo quando l'unica fonte e' Cardmarket senza vendite
+  (trend e medie presenti, almeno 3, tutte identiche): se il low supera di oltre 10x il trend e un gradato
+  (PSA/BGS/CGC 10, anche da CardsMetrics) vale almeno meta' del low, il prezzo e' il low; se un gradato da
+  almeno $1.000 supera di oltre 20x il valore fermo, il prezzo e' null.
+  `priceConfidenceScore` va da 0 a 1 (fonti indipendenti x accordo tra loro, piu' lo storico; Cardmarket senza
+  vendite non conta come fonte); sotto 0.40 niente chiamate. Le chiamate registrate prima del 2026-10-27 usano
+  la scala precedente (somma di pesi per campo, fino a 1.60).
 - **Soglia di costo** = `SELL_FEE_PCT` + `SHIPPING_COST_USD` / prezzo. Rendimento netto = lordo - soglia.
 - **Mercato**: mediana del rendimento di tutte le carte dello stesso tipo e fascia nello stesso periodo
   (serve un gruppo di almeno 30 carte, altrimenti si usa la fascia senza tipo).
