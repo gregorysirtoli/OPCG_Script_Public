@@ -86,7 +86,8 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
   (PSA/BGS/CGC 10, anche da CardsMetrics) vale almeno meta' del low, il prezzo e' il low; se un gradato da
   almeno $1.000 supera di oltre 20x il valore fermo, il prezzo e' null.
   `priceConfidenceScore` va da 0 a 1 (fonti indipendenti x accordo tra loro, piu' lo storico; Cardmarket senza
-  vendite non conta come fonte); sotto 0.40 niente chiamate. Le chiamate registrate prima del 2026-10-27 usano
+  vendite non conta come fonte; con almeno 4 prezzi vale anche lo score senza la fonte piu' lontana, fino a
+  0.69); sotto 0.40 niente chiamate. `priceConfidenceReason` in marketData dice cosa abbassa lo score. Le chiamate registrate prima del 2026-10-27 usano
   la scala precedente (somma di pesi per campo, fino a 1.60).
 - **Soglia di costo** = `SELL_FEE_PCT` + `SHIPPING_COST_USD` / prezzo. Rendimento netto = lordo - soglia.
 - **Mercato**: mediana del rendimento di tutte le carte dello stesso tipo e fascia nello stesso periodo

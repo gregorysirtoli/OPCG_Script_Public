@@ -411,6 +411,13 @@ CONFIDENCE_ABS_TOLERANCE_USD = 2.0
 # Sotto questo priceConfidenceScore niente segnali: gradingProfit, gradingAttractiveness, priceBand
 # (UNKNOWN), buyTier, stamp (Hold) e chiamate del track record.
 SIGNALS_MIN_PRICE_CONFIDENCE = 0.40
+# Con almeno CONFIDENCE_OUTLIER_MIN_VALUES prezzi lo score puo' venire anche dall'accordo senza la fonte
+# piu' lontana dalla mediana, ma cosi' non supera CONFIDENCE_OUTLIER_MAX_SCORE (sotto la soglia
+# "Reliable" 0.70 del frontend). Es. Luffy Treasure Booster: Primary/PriceCharting/CardTrader
+# $4-8, trend Cardmarket $17.8 -> 0.69 invece di 0.15. Con 3 fonti non si scarta: 2 contro 1 non
+# basta a dire chi ha ragione (es. $495/$1.116/$1.526).
+CONFIDENCE_OUTLIER_MIN_VALUES = 4
+CONFIDENCE_OUTLIER_MAX_SCORE = 0.69
 
 
 def _cardmarket_has_no_sales(doc: Optional[Dict[str, Any]]) -> bool:
@@ -431,16 +438,27 @@ def _cardmarket_low_mismatch(doc: Optional[Dict[str, Any]]) -> bool:
     return ratio > CM_LOW_TREND_MAX_RATIO or ratio < 1.0 / CM_LOW_TREND_MAX_RATIO
 
 
+def _sources_agreement(values: List[float]) -> float:
+    """Accordo 0-1 tra i prezzi: pieno se ognuno sta entro il 25% dalla mediana, nullo dal 100%."""
+    mid = median(values)
+    dispersion = max(max(abs(v - mid) - CONFIDENCE_ABS_TOLERANCE_USD, 0.0) for v in values) / mid
+    return 1.0 - min(max((dispersion - 0.25) / 0.75, 0.0), 1.0)
+
+
 def _compute_price_confidence_score(
     doc: Optional[Dict[str, Any]],
     price_7d: Optional[float],
     price_30d: Optional[float],
-) -> Optional[float]:
-    """Punteggio 0-1 di affidabilita' di priceRedLine.
+) -> Tuple[Optional[float], Optional[str]]:
+    """Punteggio 0-1 di affidabilita' di priceRedLine e motivo principale della perdita di punti.
     0.85 dalle fonti indipendenti (copertura fino a 3 fonti x accordo tra loro), 0.15 dallo storico
-    a 7 e 30 giorni. Cardmarket conta come una sola fonte; se senza vendite non conta nella copertura
-    ma entra nell'accordo, perche' resta nella mediana di priceRedLine.
+    a 7 e 30 giorni. Con almeno CONFIDENCE_OUTLIER_MIN_VALUES prezzi vale anche lo score senza la fonte
+    piu' lontana dalla mediana, fino a CONFIDENCE_OUTLIER_MAX_SCORE.
+    Cardmarket conta come una sola fonte; se senza vendite non conta nella copertura ma entra
+    nell'accordo, perche' resta nella mediana di priceRedLine.
     0 = l'unico prezzo e' Cardmarket senza vendite (bassa affidabilita'); None = nessun prezzo.
+    Motivo (priceConfidenceReason): cm_no_sales, few_sources, sources_disagree, no_history, None
+    se lo score e' pieno.
     """
     doc = doc or {}
     cm_no_sales = _cardmarket_has_no_sales(doc)
@@ -460,16 +478,33 @@ def _compute_price_confidence_score(
         if v is not None
     ]
     if not sources:
-        return 0.0 if cm_no_sales else None
+        if cm_no_sales:
+            return 0.0, "cm_no_sales"
+        # solo cmPriceLow: priceRedLine c'e' ma nessuna fonte da valutare
+        return None, ("few_sources" if _to_positive_number(doc.get("cmPriceLow")) is not None else None)
 
     priced = sources + ([cardmarket_stale] if cardmarket_stale is not None else [])
-    mid = median(priced)
-    dispersion = max(max(abs(v - mid) - CONFIDENCE_ABS_TOLERANCE_USD, 0.0) for v in priced) / mid
-    # accordo pieno fino al 25% di scarto dalla mediana, nullo dal 100%
-    agreement = 1.0 - min(max((dispersion - 0.25) / 0.75, 0.0), 1.0)
     coverage = min(len(sources), 3) / 3.0
     history = (int(_to_positive_number(price_7d) is not None) + int(_to_positive_number(price_30d) is not None)) / 2.0
-    return _round2(0.85 * coverage * agreement + 0.15 * history)
+    score = 0.85 * coverage * _sources_agreement(priced) + 0.15 * history
+    if len(priced) >= CONFIDENCE_OUTLIER_MIN_VALUES:
+        # senza la fonte piu' lontana la mediana si sposta: si tiene il migliore dei due, mai sotto lo score pieno
+        mid = median(priced)
+        rest = list(priced)
+        rest.remove(max(priced, key=lambda v: abs(v - mid)))
+        rest_score = 0.85 * coverage * _sources_agreement(rest) + 0.15 * history
+        score = max(score, min(rest_score, CONFIDENCE_OUTLIER_MAX_SCORE))
+
+    # motivo = componente che costa piu' punti
+    losses = {
+        "few_sources": 0.85 * (1.0 - coverage),
+        "sources_disagree": 0.85 * coverage + 0.15 * history - score,
+        "no_history": 0.15 * (1.0 - history),
+    }
+    reason = max(losses, key=losses.get)
+    if losses[reason] < 1e-9:
+        reason = None
+    return _round2(score), reason
 
 
 def _graded_reference(doc: Dict[str, Any]) -> Optional[float]:
@@ -1571,7 +1606,7 @@ def compute_market_data_for_item(
 
     # Segnali (grading, priceBand, buyTier, stamp) solo con un prezzo affidabile: con score basso
     # escono numeri assurdi (es. Zoro CS 25-26 1st Place a $67 con PSA 10 a $130k: gradingProfit +88.245%).
-    price_confidence_score = _compute_price_confidence_score(latest, price_7d, price_30d)
+    price_confidence_score, price_confidence_reason = _compute_price_confidence_score(latest, price_7d, price_30d)
     signals_ok = price_confidence_score is not None and price_confidence_score >= SIGNALS_MIN_PRICE_CONFIDENCE
 
     # gradingProfit percent (%)
@@ -1735,6 +1770,7 @@ def compute_market_data_for_item(
         "sales30d": sales_30d_estimate, # STIMA unita' vendute, da calo listing (non conteggio reale)
         "gradingAttractivenessScore": grading_attractiveness_score, # 0..100
         "priceConfidenceScore": price_confidence_score, # 0..1, sotto SIGNALS_MIN_PRICE_CONFIDENCE niente segnali
+        "priceConfidenceReason": price_confidence_reason, # cm_no_sales | few_sources | sources_disagree | no_history | None
 
         # ledger-style derived calls
         "priceBand": price_band,
