@@ -1,6 +1,6 @@
 name: OnePiece - IG - Tierlist (sealed)
 
-# Ogni giovedi': lo script decide il turno (giovedi' vuoto, Booster Box, vuoto, Booster Box Case, ...).
+# Ogni giovedi': lo script decide il turno (Booster Box nel giorno 8-14, Booster Box Case nel giorno 15-21).
 # Da GitHub si puo' forzare il tipo con l'input "kind".
 on:
   workflow_dispatch:

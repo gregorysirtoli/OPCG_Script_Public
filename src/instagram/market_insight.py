@@ -27,6 +27,12 @@ def generate_market_insight_post() -> None:
         raise RuntimeError("MONGODB_URI/MONGODB_DB (or MONGODB_URI_ONEPIECE/MONGODB_DB_ONEPIECE) required")
     os.environ["MONGODB_URI"] = mongo_uri
     os.environ["MONGODB_DB"] = db_name
+    # DB vendite per report PSA, vendite e cambi di stamp
+    sales_uri = os.getenv("MONGODB_SALES_URI") or os.getenv("MONGODB_SALES_URI_ONEPIECE")
+    sales_db = os.getenv("MONGODB_SALES_DB") or os.getenv("MONGODB_SALES_DB_ONEPIECE")
+    if sales_uri and sales_db:
+        os.environ["MONGODB_SALES_URI"] = sales_uri
+        os.environ["MONGODB_SALES_DB"] = sales_db
 
     print(f"[Orchestrator] MongoDB DB: {db_name}")
     print("[Orchestrator] Delegating to provider main()")
