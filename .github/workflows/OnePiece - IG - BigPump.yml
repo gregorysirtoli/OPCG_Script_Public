@@ -1,9 +1,8 @@
 name: OnePiece - IG - Top Mover Generation
 
+# Solo avvio manuale: approfondimento su una sola carta. Il post settimanale e' Market Movers (Movers.yml).
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 15 * * 1"
 
 jobs:
   generate-big-pump:

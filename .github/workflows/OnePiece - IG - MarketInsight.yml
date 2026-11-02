@@ -1,9 +1,17 @@
 name: OnePiece - IG - Market Insight
 
+# Mercoledi' una carta da $200 in su, venerdi' una da $50 a $200: la fascia la sceglie lo script dal giorno.
+# Da GitHub si puo' forzare con l'input "price_band".
 on:
   workflow_dispatch:
+    inputs:
+      price_band:
+        description: "Fascia di prezzo (auto = quella del giorno)"
+        type: choice
+        options: [auto, USD_200_PLUS, USD_50_200]
+        default: auto
   schedule:
-    - cron: "0 15 * * 3"
+    - cron: "0 15 * * 3,5"
 
 jobs:
   generate-market-insight:
@@ -20,6 +28,7 @@ jobs:
       AI_GATEWAY_MODEL: ${{ secrets.AI_GATEWAY_MODEL }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
+      MARKET_INSIGHT_PRICE_BAND: ${{ inputs.price_band || 'auto' }}
       INSTAGRAM_POST_INITIAL_STATUS: draft
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
