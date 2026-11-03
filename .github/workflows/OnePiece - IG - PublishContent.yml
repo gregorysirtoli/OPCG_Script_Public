@@ -1,10 +1,14 @@
 name: OnePiece - IG - Publish Content
 
-on:
-  workflow_dispatch:
-  schedule:
+#on:
+#  workflow_dispatch:
+#  schedule:
     # pubblica 1 bozza al giorno alle 17:00 UTC (i post vengono generati alle 15:00 UTC)
-    - cron: "0 17 * * *"
+#    - cron: "0 17 * * *"
+
+  # Solo avvio manuale.
+  on:
+    workflow_dispatch:
 
 jobs:
   publish-content:
