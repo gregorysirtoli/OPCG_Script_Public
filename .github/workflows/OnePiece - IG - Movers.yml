@@ -1,11 +1,9 @@
 name: OnePiece - IG - Market Movers
 
-# Ogni lunedi': Top Movers e Top Drops (fino a 3 carte per lato) in un solo carosello.
-
+# Deprecato: solo avvio manuale (3 Top Movers e 3 Top Drops in un solo carosello).
+# Il lunedi' ora e' MondayRotation.yml: Market Movers pump / dump a settimane alterne, in mezzo Market Insight promo.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 15 * * 1"
 
 jobs:
   generate-market-movers:
