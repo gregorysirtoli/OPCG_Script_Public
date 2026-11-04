@@ -21,7 +21,7 @@ from src.trackrecord.ledger import (
     recent_calls_index,
 )
 
-GRADING_FEES = 80
+GRADING_FEES = 50
 SET_TREND_DAYS = 90
 SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
 SET_HISTORY_LOOKBACK_DAYS = 45
