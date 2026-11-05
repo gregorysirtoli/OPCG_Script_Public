@@ -24,7 +24,9 @@ from src.trackrecord.ledger import (
 GRADING_FEES = 50
 SET_TREND_DAYS = 90
 SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
-SET_HISTORY_LOOKBACK_DAYS = 45
+# Storico SetsMarketData letto per le variazioni del valore del set: basta per la base a 90 gg
+# (90 + 10 di tolleranza)
+SET_HISTORY_LOOKBACK_DAYS = 105
 SET_TOP_BASE_PRICE = 20.0
 SET_MARKET_HISTORY_COLLECTION = "SetsMarketData"
 CARD_STAMPS_COLLECTION = "CardsStamps"
@@ -39,6 +41,7 @@ SET_MARKET_HISTORY_FIELDS = (
     "totalPrice",
     "totalPriceChange7d",
     "totalPriceChange30d",
+    "totalPriceChange90d",
     "psa10CardsCount",
     "psa10TotalPrice",
     "bgs10CardsCount",
@@ -1864,6 +1867,18 @@ def _build_set_market_data(
         if baseline_total_price_30d is not None and baseline_total_price_30d > 0
         else None
     )
+    # 90 giorni: stesso metodo di 7/30 (snapshot SetsMarketData piu' vicino alla data, entro 10 gg)
+    baseline_total_price_90d = _pick_baseline_value_around(
+        set_history_docs,
+        "totalPrice",
+        now_utc - timedelta(days=90),
+        max_days=10,
+    )
+    total_price_change_90d = (
+        _round2((total_price - baseline_total_price_90d) / baseline_total_price_90d * 100.0)
+        if baseline_total_price_90d is not None and baseline_total_price_90d > 0
+        else None
+    )
 
     booster_box_price = _safe_round2(sealed_price) if sealed_price is not None and sealed_price > 0 else None
     booster_pack_price = None
@@ -2265,6 +2280,7 @@ def _build_set_market_data(
         "totalPrice": total_price,
         "totalPriceChange7d": total_price_change_7d,
         "totalPriceChange30d": total_price_change_30d,
+        "totalPriceChange90d": total_price_change_90d,
         "psa10CardsCount": len(psa10_prices),
         "psa10TotalPrice": _safe_round2(sum(psa10_prices)) if psa10_prices else 0.0,
         "bgs10CardsCount": len(bgs10_prices),
