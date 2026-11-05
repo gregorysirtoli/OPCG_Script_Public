@@ -432,6 +432,111 @@ def _forecast_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+# "100 $ su ogni chiamata": lati che comprano la carta (le chiamate di vendita e Hold non sono
+# un acquisto). Classi dell'istogramma dei rendimenti netti, in %: (-inf,-50], (-50,-25], ...
+PICK_SIDES = ("buy", "speculative")
+PICK_STAKE_USD = 100.0
+RETURN_BUCKET_EDGES = (-50.0, -25.0, -10.0, 0.0, 10.0, 25.0, 50.0, 100.0)
+
+
+def _bucket_index(value: float) -> int:
+    for i, edge in enumerate(RETURN_BUCKET_EDGES):
+        if value <= edge:
+            return i
+    return len(RETURN_BUCKET_EDGES)
+
+
+def _pick_simulation(outcomes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """100 $ su ogni chiamata di acquisto delle regole correnti, per lato e orizzonte.
+
+    Valore finale = somma di 100 x (1 + rendimento netto) delle chiamate valutate: e' il
+    rendimento netto gia' calcolato per ogni esito, sommato. Sotto MIN_SAMPLE solo il conteggio.
+    """
+    rows: List[Dict[str, Any]] = []
+    for side in PICK_SIDES:
+        for horizon in HORIZONS_DAYS:
+            net = [
+                r["netReturnPct"]
+                for r in outcomes
+                if r.get("side") == side
+                and r.get("horizonDays") == horizon
+                and r.get("rulesVersion") == SIGNAL_RULES_VERSION
+                and r.get("status") == "evaluated"
+                and r.get("netReturnPct") is not None
+            ]
+            n = len(net)
+            enough = n >= MIN_SAMPLE
+            row: Dict[str, Any] = {
+                "side": side,
+                "horizonDays": horizon,
+                "rulesVersion": SIGNAL_RULES_VERSION,
+                "evaluated": n,
+                "sampleTooSmall": not enough,
+                "stakeUsd": PICK_STAKE_USD,
+                "investedUsd": None,
+                "valueUsd": None,
+                "totalNetReturnPct": None,
+                "medianNetReturnPct": None,
+                "gainers": None,
+                "losers": None,
+                "distribution": None,
+            }
+            if enough:
+                value = sum(PICK_STAKE_USD * (1 + v / 100.0) for v in net)
+                invested = PICK_STAKE_USD * n
+                counts = [0] * (len(RETURN_BUCKET_EDGES) + 1)
+                for v in net:
+                    counts[_bucket_index(v)] += 1
+                edges: List[Optional[float]] = [None, *RETURN_BUCKET_EDGES, None]
+                row.update({
+                    "investedUsd": round(invested, 2),
+                    "valueUsd": round(value, 2),
+                    "totalNetReturnPct": round((value / invested - 1) * 100.0, 2),
+                    "medianNetReturnPct": _q(net, 0.5),
+                    "gainers": sum(1 for v in net if v > 0),
+                    "losers": sum(1 for v in net if v <= 0),
+                    "distribution": [
+                        {"fromPct": edges[i], "toPct": edges[i + 1], "count": c}
+                        for i, c in enumerate(counts)
+                    ],
+                })
+            rows.append(row)
+    return rows
+
+
+def _monthly_table(db: Database, outcomes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Mese per mese (mese della chiamata, UTC): chiamate emesse (tutti i segnali) e, per le
+    chiamate di acquisto a 4 settimane, valutate / successi / rendimento netto / scarto dal
+    mercato con le stesse regole di _call_stats (percentuali solo da MIN_SAMPLE)."""
+    issued: Dict[str, int] = {}
+    for row in db[TRACK_RECORD_CALLS_COLLECTION].aggregate([
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m", "date": "$calledAt"}}, "n": {"$sum": 1}}},
+    ]):
+        if row.get("_id"):
+            issued[row["_id"]] = int(row["n"])
+
+    buy_rows: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for r in outcomes:
+        called_at = r.get("calledAt")
+        if r.get("side") == "buy" and r.get("horizonDays") == 28 and isinstance(called_at, datetime):
+            buy_rows[f"{called_at:%Y-%m}"].append(r)
+
+    table = []
+    for month in sorted(set(issued) | set(buy_rows), reverse=True):
+        stats = _call_stats(buy_rows.get(month, []))
+        table.append({
+            "month": month,
+            "callsIssued": issued.get(month, 0),
+            "buyCallsChecked4w": stats["evaluated"],
+            "sampleTooSmall": stats["sampleTooSmall"],
+            "successRatePct": stats["successRatePct"],
+            "medianNetReturnPct": stats["medianNetReturnPct"],
+            "medianExcessReturnPct": stats["medianExcessReturnPct"],
+            "rulesVersions": sorted({str(r.get("rulesVersion")) for r in buy_rows.get(month, []) if r.get("rulesVersion")}),
+        })
+    return table
+
+
 def build_summary(db: Database, now: datetime) -> Dict[str, Any]:
     outcomes = list(db[TRACK_RECORD_OUTCOMES_COLLECTION].find({}, {"_id": 0, "eventId": 0, "itemId": 0}))
     groups: Dict[Tuple, List[Dict[str, Any]]] = defaultdict(list)
@@ -492,6 +597,8 @@ def build_summary(db: Database, now: datetime) -> Dict[str, Any]:
         },
         "calls": calls_table,
         "forecasts": forecasts_table,
+        "pickSimulation": _pick_simulation(outcomes),
+        "monthly": _monthly_table(db, outcomes),
     }
     db[TRACK_RECORD_SUMMARY_COLLECTION].replace_one({"_id": "latest"}, summary, upsert=True)
     return summary

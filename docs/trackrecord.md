@@ -72,7 +72,12 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
 - **TrackRecordBenchmarks** (solo in aggiunta): mediana dei rendimenti di tutte le carte per tipo e fascia,
   per giorno e orizzonte.
 - **TrackRecordSummary** (`_id: latest`, riscritto ogni giorno): `headline`, tabella `calls` per versione
-  regole x segnale x orizzonte x fascia x liquidita' (con le righe `ALL`), tabella `forecasts` per tier.
+  regole x segnale x orizzonte x fascia x liquidita' (con le righe `ALL`), tabella `forecasts` per tier,
+  `pickSimulation` ("100 $ su ogni chiamata": per lato `buy` / `speculative` e orizzonte, solo regole correnti,
+  valore finale = somma di 100 x (1 + rendimento netto), istogramma dei rendimenti netti nelle classi
+  `RETURN_BUCKET_EDGES`) e `monthly` (per mese della chiamata: chiamate emesse e, per le chiamate `buy` a
+  4 settimane, valutate / successi / rendimento netto / scarto dal mercato come `_call_stats`). Sotto
+  `MIN_SAMPLE` chiamate valutate niente numeri, solo i conteggi.
 - **TrackRecordDigests** (solo in aggiunta): impronte giornaliere, pubblicate ogni giorno in
   `onepiece-digests.csv` del repository pubblico <https://github.com/redline-cards/OPCG-Track-Record>
   (secret `TRACKRECORD_REPO_TOKEN`: token fine-grained con Contents read/write solo su quel repository).
