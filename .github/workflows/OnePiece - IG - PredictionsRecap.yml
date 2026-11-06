@@ -1,16 +1,14 @@
 name: OnePiece - IG - Prediction Check
 
-# Ogni giovedi': lo script pubblica solo il quarto giovedi' dei mesi con cinque giovedi' (resoconto delle Predictions).
-# Da GitHub si puo' forzare con l'input "force".
+# Solo ad avvio manuale: il suo giovedi' (il quarto dei mesi con cinque giovedi') e' passato alla Set Heatmap
+# (OnePiece - IG - SetHeatmap.yml). Senza l'input "force" lo script non crea il post.
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post anche fuori calendario"
+        description: "Genera il post (senza, lo script si ferma: non e' piu' a calendario)"
         type: boolean
-        default: false
-  schedule:
-    - cron: "0 15 * * 4"
+        default: true
 
 jobs:
   generate-predictions-recap:
