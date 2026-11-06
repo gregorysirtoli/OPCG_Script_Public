@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-def generate_cards_tierlist_post() -> None:
+def generate_cards_tierlist_post() -> str:
     from private_providers.instagram import generateCardsTierlist as cards_tierlist_gen
 
     print("[Orchestrator] Starting cards tierlist generation workflow")
@@ -31,9 +31,11 @@ def generate_cards_tierlist_post() -> None:
     print(f"[Orchestrator] MongoDB DB: {db_name}")
     print("[Orchestrator] Delegating to provider main()")
 
-    cards_tierlist_gen.main()
+    # "skipped" il primo sabato del mese (tocca al Set Insight)
+    result = cards_tierlist_gen.main()
 
-    print("[Orchestrator] Cards tierlist workflow completed")
+    print(f"[Orchestrator] Cards tierlist workflow completed ({result})")
+    return result
 
 
 if __name__ == "__main__":
@@ -47,8 +49,9 @@ if __name__ == "__main__":
     local_only = os.getenv("DEBUG_LOCAL_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
-        generate_cards_tierlist_post()
-        if local_only:
+        result = generate_cards_tierlist_post()
+        # il sabato del Set Insight nessuna mail
+        if local_only or result == "skipped":
             sys.exit(0)
 
         end_time = time.time()

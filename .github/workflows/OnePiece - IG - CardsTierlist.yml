@@ -18,6 +18,8 @@ jobs:
       AI_GATEWAY_BASE_URL: ${{ secrets.AI_GATEWAY_BASE_URL }}
       AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
       AI_GATEWAY_MODEL: ${{ secrets.AI_GATEWAY_MODEL }}
+      # il primo sabato del mese tocca al Set Insight: lo script si ferma, tranne negli avvii manuali
+      CARDS_TIERLIST_FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
       INSTAGRAM_POST_INITIAL_STATUS: draft
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
