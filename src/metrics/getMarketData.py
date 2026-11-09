@@ -29,6 +29,9 @@ SET_PRICE_LOOKBACK_DAYS = max(SET_TREND_DAYS + 15, 45)
 SET_HISTORY_LOOKBACK_DAYS = 105
 SET_TOP_BASE_PRICE = 20.0
 SET_MARKET_HISTORY_COLLECTION = "SetsMarketData"
+# Variazioni del valore di un set: se il numero di carte (o di altri prodotti) del giorno di confronto differisce di
+# oltre questa quota da oggi, il confronto non vale (carte aggiunte o tolte, non un movimento di prezzo) e resta None
+SET_CHANGE_COUNT_TOLERANCE = 0.02
 CARD_STAMPS_COLLECTION = "CardsStamps"
 CARD_STAMP_CHANGES_COLLECTION = "CardsStampChanges"
 CHARACTER_POPULARITY_COLLECTION = "wt100"
@@ -42,6 +45,9 @@ SET_MARKET_HISTORY_FIELDS = (
     "totalPriceChange7d",
     "totalPriceChange30d",
     "totalPriceChange90d",
+    "totalOtherPriceChange7d",
+    "totalOtherPriceChange30d",
+    "totalOtherPriceChange90d",
     "psa10CardsCount",
     "psa10TotalPrice",
     "bgs10CardsCount",
@@ -1845,39 +1851,30 @@ def _build_set_market_data(
     total_price = _safe_round2(total_cards_price + total_other_types_price)
 
     now_utc = datetime.now(timezone.utc)
-    baseline_total_price_7d = _pick_baseline_value_around(
-        set_history_docs,
-        "totalPrice",
-        now_utc - timedelta(days=7),
-        max_days=3.5,
+
+    def history_change(now_value: float, field: str, count_field: str, now_count: int, days: int, max_days: float) -> Optional[float]:
+        """Variazione % di now_value rispetto allo snapshot SetsMarketData di `field` piu' vicino a `days` giorni fa
+        (entro max_days); None se quello snapshot ha un numero di elementi (count_field) diverso da now_count di oltre
+        SET_CHANGE_COUNT_TOLERANCE."""
+        docs = [doc for doc in set_history_docs if _to_number(doc.get(field)) is not None]
+        baseline_doc = _get_closest_around(docs, now_utc - timedelta(days=days), max_days=max_days) if docs else None
+        baseline = _to_number(baseline_doc.get(field)) if baseline_doc else None
+        if baseline is None or baseline <= 0:
+            return None
+        baseline_count = _to_number(baseline_doc.get(count_field))
+        if baseline_count is not None and abs(baseline_count - now_count) > SET_CHANGE_COUNT_TOLERANCE * max(now_count, 1):
+            return None
+        return _round2((now_value - baseline) / baseline * 100.0)
+
+    # totalPriceChange* = variazione delle sole carte (totalCardsPrice): i sigillati hanno pochi prodotti con prezzi
+    # molto volatili (un solo case puo' spostare il valore del set del 50%) e sono in totalOtherPriceChange*.
+    windows = ((7, 3.5), (30, 7), (90, 10))
+    total_price_change_7d, total_price_change_30d, total_price_change_90d = (
+        history_change(total_cards_price, "totalCardsPrice", "cardsCount", cards_count, days, max_days) for days, max_days in windows
     )
-    baseline_total_price_30d = _pick_baseline_value_around(
-        set_history_docs,
-        "totalPrice",
-        now_utc - timedelta(days=30),
-        max_days=7,
-    )
-    total_price_change_7d = (
-        _round2((total_price - baseline_total_price_7d) / baseline_total_price_7d * 100.0)
-        if baseline_total_price_7d is not None and baseline_total_price_7d > 0
-        else None
-    )
-    total_price_change_30d = (
-        _round2((total_price - baseline_total_price_30d) / baseline_total_price_30d * 100.0)
-        if baseline_total_price_30d is not None and baseline_total_price_30d > 0
-        else None
-    )
-    # 90 giorni: stesso metodo di 7/30 (snapshot SetsMarketData piu' vicino alla data, entro 10 gg)
-    baseline_total_price_90d = _pick_baseline_value_around(
-        set_history_docs,
-        "totalPrice",
-        now_utc - timedelta(days=90),
-        max_days=10,
-    )
-    total_price_change_90d = (
-        _round2((total_price - baseline_total_price_90d) / baseline_total_price_90d * 100.0)
-        if baseline_total_price_90d is not None and baseline_total_price_90d > 0
-        else None
+    other_types_change_7d, other_types_change_30d, other_types_change_90d = (
+        history_change(total_other_types_price, "totalOtherTypesPrice", "otherTypesCount", non_cards_count, days, max_days)
+        for days, max_days in windows
     )
 
     booster_box_price = _safe_round2(sealed_price) if sealed_price is not None and sealed_price > 0 else None
@@ -2281,6 +2278,9 @@ def _build_set_market_data(
         "totalPriceChange7d": total_price_change_7d,
         "totalPriceChange30d": total_price_change_30d,
         "totalPriceChange90d": total_price_change_90d,
+        "totalOtherPriceChange7d": other_types_change_7d,
+        "totalOtherPriceChange30d": other_types_change_30d,
+        "totalOtherPriceChange90d": other_types_change_90d,
         "psa10CardsCount": len(psa10_prices),
         "psa10TotalPrice": _safe_round2(sum(psa10_prices)) if psa10_prices else 0.0,
         "bgs10CardsCount": len(bgs10_prices),
@@ -2476,6 +2476,10 @@ def update_sets_market_data(db: Database, set_ids: List[str]) -> Tuple[int, int]
             "setId": 1,
             "createdAt": 1,
             "totalPrice": 1,
+            "totalCardsPrice": 1,
+            "totalOtherTypesPrice": 1,
+            "cardsCount": 1,
+            "otherTypesCount": 1,
         },
     ):
         set_id = history_doc.get("setId")

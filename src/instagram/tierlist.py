@@ -34,11 +34,9 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, tierlist_id: str | None
 
     print(f"[Orchestrator] Rendering tierlist image...")
     try:
-        image_bytes = tierlist_gen.render_tierlist_post(tierlist_doc)
-        print(f"[Orchestrator] ✓ Image rendered: {len(image_bytes)} bytes")
-        # seconda slide: CTA (commenta, salva il post, segui la pagina)
-        cta_bytes = tierlist_gen.render_cta_post(tierlist_doc)
-        print(f"[Orchestrator] ✓ CTA slide rendered: {len(cta_bytes)} bytes")
+        # tierlist, heatmap dei set della tierlist (variazione a 30 giorni), CTA
+        slides, _ = tierlist_gen.render_slides(mongo_uri, db_name, tierlist_doc)
+        print(f"[Orchestrator] ✓ Slides rendered: {', '.join(f'{name} ({len(data)} bytes)' for name, data in slides)}")
     except Exception as e:
         print(f"[Orchestrator] ✗ Failed to render image: {e}")
         raise
@@ -104,16 +102,12 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, tierlist_id: str | None
 
     if DEBUG_LOCAL_ONLY:
         print("[Orchestrator] DEBUG_LOCAL_ONLY enabled: writing files locally, skipping GCS and MongoDB post save")
-        tierlist_gen.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        slide_path = tierlist_gen.OUTPUT_DIR / "slide_01_tierlist.jpg"
-        slide_path.write_bytes(image_bytes)
-        cta_path = tierlist_gen.OUTPUT_DIR / "slide_02_cta.jpg"
-        cta_path.write_bytes(cta_bytes)
+        slide_paths = tierlist_gen.write_local_slides(slides)
         caption_path = tierlist_gen.OUTPUT_DIR / "caption.txt"
         caption_path.write_text(caption, encoding="utf-8")
         manifest_payload["local"] = {
             "caption_path": str(caption_path),
-            "slides": [str(slide_path), str(cta_path)],
+            "slides": slide_paths,
         }
         manifest_path = tierlist_gen.write_manifest(tierlist_gen.OUTPUT_DIR, manifest_payload)
         mongo_payload = None
@@ -121,7 +115,7 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, tierlist_id: str | None
     else:
         print(f"[Orchestrator] Uploading images to Google Cloud Storage...")
         try:
-            storage_payload = tierlist_gen.upload_images_to_gcs([image_bytes, cta_bytes], tierlist_doc)
+            storage_payload = tierlist_gen.upload_images_to_gcs([data for _, data in slides], tierlist_doc)
             manifest_payload["storage"] = storage_payload
             print(f"[Orchestrator] ✓ Images uploaded to GCS")
             print(f"[Orchestrator]   Bucket: {storage_payload.get('bucket')}")

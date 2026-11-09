@@ -1,16 +1,14 @@
 name: OnePiece - IG - Set Heatmap
 
-# Ogni giovedi': lo script pubblica solo il quarto giovedi' dei mesi con cinque giovedi' (lo slot che era del
-# Prediction Check; generateSealedTierlist.thursday_post == "heatmap"). Da GitHub si puo' forzare con l'input "force".
+# Solo ad avvio manuale: dal 9/11/2026 la heatmap (a 30 giorni) e' la seconda slide del post Tierlist dei set e
+# questo post completo non ha piu' uno slot nel calendario.
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post anche fuori calendario"
+        description: "Genera il post (senza force lo script non pubblica)"
         type: boolean
-        default: false
-  schedule:
-    - cron: "0 15 * * 4"
+        default: true
 
 jobs:
   generate-set-heatmap:
