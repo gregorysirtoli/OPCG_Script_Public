@@ -1,14 +1,16 @@
 name: OnePiece - IG - Set Heatmap
 
-# Solo ad avvio manuale: dal 9/11/2026 la heatmap (a 30 giorni) e' la seconda slide del post Tierlist dei set e
-# questo post completo non ha piu' uno slot nel calendario.
+# L'ultimo giovedi' dei mesi pari, al posto della Tierlist dei set (che esce nei mesi dispari): lo script controlla
+# il giorno (generateSealedTierlist.thursday_post == "heatmap") e negli altri giovedi' non fa nulla.
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post (senza force lo script non pubblica)"
+        description: "Genera il post anche se oggi non e' l'ultimo giovedi' di un mese pari"
         type: boolean
-        default: true
+        default: false
+  schedule:
+    - cron: "0 15 * * 4"
 
 jobs:
   generate-set-heatmap:
@@ -24,7 +26,7 @@ jobs:
       AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
       AI_GATEWAY_MODEL: ${{ secrets.AI_GATEWAY_MODEL }}
       SET_HEATMAP_FORCE: ${{ inputs.force && '1' || '0' }}
-      SET_HEATMAP_PERIOD: 7d
+      SET_HEATMAP_PERIOD: 30d
       INSTAGRAM_POST_INITIAL_STATUS: draft
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}

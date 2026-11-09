@@ -34,8 +34,8 @@ def generate_tierlist_post(mongo_uri: str, db_name: str, tierlist_id: str | None
 
     print(f"[Orchestrator] Rendering tierlist image...")
     try:
-        # tierlist, heatmap dei set della tierlist (variazione a 30 giorni), CTA
-        slides, _ = tierlist_gen.render_slides(mongo_uri, db_name, tierlist_doc)
+        # tierlist e CTA (la Set Heatmap e' un post a parte)
+        slides = tierlist_gen.render_slides(tierlist_doc)
         print(f"[Orchestrator] ✓ Slides rendered: {', '.join(f'{name} ({len(data)} bytes)' for name, data in slides)}")
     except Exception as e:
         print(f"[Orchestrator] ✗ Failed to render image: {e}")

@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       tierlist_id:
-        description: "_id della tierlist (vuoto = automatico: mesi dispari EN, mesi pari JP)"
+        description: "_id della tierlist (vuoto = TIERLIST_ID_EN)"
         required: false
         default: ""
   schedule:
-    # ogni giovedi': lo step "Select tierlist" lascia proseguire solo l'ultimo giovedi' del mese
+    # ogni giovedi': lo step "Select tierlist" lascia proseguire solo l'ultimo giovedi' dei mesi dispari
+    # (nei mesi pari quel giovedi' esce la Set Heatmap, OnePiece - IG - SetHeatmap.yml)
     - cron: "0 15 * * 4"
 
 jobs:
@@ -24,9 +25,8 @@ jobs:
       AI_GATEWAY_MODEL: ${{ secrets.AI_GATEWAY_MODEL }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
-      # _id delle tierlist: mesi dispari EN, mesi pari JP
+      # _id della tierlist: Main Expansion (English)
       TIERLIST_ID_EN: 6a9fe876bd29bfbb7e455276
-      TIERLIST_ID_JP: 6a9ff544bd29bfbb7e455277
       INSTAGRAM_POST_INITIAL_STATUS: draft
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
@@ -34,7 +34,7 @@ jobs:
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
     steps:
-      - name: Select tierlist (last Thursday of the month, EN/JP by month)
+      - name: Select tierlist (last Thursday of odd months, EN)
         id: plan
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -49,16 +49,19 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          if [ "$EVENT_NAME" = "schedule" ] && [ $((month % 2)) -eq 0 ]; then
+            echo "Month $month is even: the last Thursday is the Set Heatmap post, no tierlist"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -n "$INPUT_TIERLIST_ID" ]; then
             if ! [[ "$INPUT_TIERLIST_ID" =~ ^[0-9a-f]{24}$ ]]; then
               echo "Invalid tierlist_id: $INPUT_TIERLIST_ID" >&2
               exit 1
             fi
             id="$INPUT_TIERLIST_ID"
-          elif [ $((month % 2)) -eq 1 ]; then
-            id="$TIERLIST_ID_EN"
           else
-            id="$TIERLIST_ID_JP"
+            id="$TIERLIST_ID_EN"
           fi
           echo "Month $month -> TIERLIST_ID=$id"
           echo "TIERLIST_ID=$id" >> "$GITHUB_ENV"
