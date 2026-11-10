@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "0 15 * * 6"
+    - cron: "0 9 * * 6"
 
 jobs:
   generate-set-insight:

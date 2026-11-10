@@ -10,7 +10,7 @@ on:
   schedule:
     # ogni giovedi': lo step "Select tierlist" lascia proseguire solo l'ultimo giovedi' dei mesi dispari
     # (nei mesi pari quel giovedi' esce la Set Heatmap, OnePiece - IG - SetHeatmap.yml)
-    - cron: "0 15 * * 4"
+    - cron: "0 9 * * 4"
 
 jobs:
   generate-tierlist:
