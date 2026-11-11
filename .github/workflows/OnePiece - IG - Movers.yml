@@ -13,9 +13,8 @@ jobs:
       PYTHONUNBUFFERED: "1"
       MONGODB_URI: ${{ secrets.MONGODB_URI_ONEPIECE }}
       MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
-      AI_GATEWAY_BASE_URL: ${{ secrets.AI_GATEWAY_BASE_URL }}
-      AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
-      AI_GATEWAY_MODEL: ${{ secrets.AI_GATEWAY_MODEL }}
+      # caption scritte da Claude via Claude Code (abbonamento), vedi private_providers/instagram/aiCaption.py
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
       GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
       INSTAGRAM_POST_INITIAL_STATUS: draft
@@ -44,6 +43,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          npm install -g @anthropic-ai/claude-code
 
       - name: Generate Market Movers Post
         run: |
