@@ -1,7 +1,7 @@
 name: OnePiece - IG - Insights
 
 # Ogni giorno: statistiche Instagram (copertura, visualizzazioni, salvataggi, condivisioni...) dei post pubblicati
-# a 7 e a 30 giorni, salvate in InstagramPosts.insights; il primo del mese anche il riepilogo per pipeline del mese
+# a 1, 2, 7 e 30 giorni, salvate in InstagramPosts.insights; il primo del mese anche il riepilogo per pipeline del mese
 # prima (InstagramInsightsMonthly + mail). Il token deve avere il permesso instagram_business_manage_insights.
 on:
   workflow_dispatch:
@@ -11,7 +11,9 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "0 6 * * *"
+    # 19:47 UTC, 2 ore dopo la pubblicazione (17:47 UTC): ogni checkpoint cade a N giorni + ~2h anche se
+    # GitHub ritarda la pubblicazione, senza slittare al giorno dopo
+    - cron: "47 19 * * *"
 
 jobs:
   instagram-insights:
