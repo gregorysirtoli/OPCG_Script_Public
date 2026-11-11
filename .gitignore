@@ -16,6 +16,9 @@ logs/
 # Artifact
 artifacts
 
+# Temp
+/temp
+
 # OS
 .DS_Store
 /private_providers/
