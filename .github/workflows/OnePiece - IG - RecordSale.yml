@@ -3,7 +3,7 @@ name: OnePiece - IG - Record Sale
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 9 * * 0"
+    - cron: "37 13 * * 0"
 
 jobs:
   generate-record-sale:

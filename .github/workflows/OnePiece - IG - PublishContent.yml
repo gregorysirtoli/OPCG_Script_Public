@@ -5,7 +5,7 @@ on:
   schedule:
     # pubblica 1 bozza al giorno alle 17:47 UTC = 18:47 a Roma in inverno, 19:47 in estate (non allo scoccare
     # dell'ora, quando GitHub ritarda di piu' i job schedulati; i post vengono
-    # generati alle 09:00 UTC); gli insights si leggono alle 19:47 UTC, allineati a questo orario
+    # generati alle 13:37 UTC, 4 ore prima); gli insights si leggono alle 19:47 UTC, allineati a questo orario
     - cron: "47 17 * * *"
 
 jobs:

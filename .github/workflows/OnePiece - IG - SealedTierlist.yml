@@ -14,7 +14,7 @@ on:
           - case
         default: auto
   schedule:
-    - cron: "0 9 * * 4"
+    - cron: "37 13 * * 4"
 
 jobs:
   generate-sealed-tierlist:
