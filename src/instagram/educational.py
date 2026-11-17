@@ -31,7 +31,6 @@ def generate_educational_post() -> str:
     print(f"[Orchestrator] MongoDB DB: {db_name}")
     print("[Orchestrator] Delegating to provider main()")
 
-    # "generated", oppure "skipped" nei giorni senza post
     result = edu_gen.main()
 
     print(f"[Orchestrator] Educational workflow completed ({result})")
@@ -49,9 +48,8 @@ if __name__ == "__main__":
     local_only = os.getenv("DEBUG_LOCAL_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
-        result = generate_educational_post()
-        # senza post (skipped) nessuna mail
-        if local_only or result == "skipped":
+        generate_educational_post()
+        if local_only:
             sys.exit(0)
 
         end_time = time.time()

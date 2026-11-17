@@ -1,0 +1,52 @@
+name: OnePiece - IG - Educational
+
+# Carosello educativo lungo "Collector 101" (src/instagram/educational.py), solo manuale (nessuno schedule).
+# Claude fa tutto da solo: sceglie un argomento nuovo (finanza, investimento, lettura del mercato, grading, collezionismo,
+# lezioni dagli altri TCG, focus One Piece) con ricerca web, prende carte, prodotti e prezzi dal DB, scrive slide e caption.
+# Il post finisce in InstagramPosts come bozza.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-educational:
+    runs-on: ubuntu-24.04
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      MONGODB_URI: ${{ secrets.MONGODB_URI_ONEPIECE }}
+      MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
+      GOOGLE_CLOUD_STORAGE_BUCKET: ${{ secrets.GOOGLE_CLOUD_STORAGE_BUCKET }}
+      GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT_B64 }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      INSTAGRAM_POST_INITIAL_STATUS: draft
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Checkout private providers repo
+        uses: actions/checkout@v4
+        with:
+          repository: gregorysirtoli/OPCG_Script_Private
+          token: ${{ secrets.PROVIDERS_TOKEN }}
+          path: private_providers
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          npm install -g @anthropic-ai/claude-code
+
+      - name: Generate Educational post
+        run: |
+          python -m src.instagram.educational
