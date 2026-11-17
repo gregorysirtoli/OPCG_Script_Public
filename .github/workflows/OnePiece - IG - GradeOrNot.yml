@@ -1,6 +1,6 @@
 name: OnePiece - IG - Grade It or Not
 
-# Il quarto giovedi' dei mesi con cinque giovedi' (lo slot che resterebbe libero): lo script controlla il giorno
+# Il terzo giovedi' del mese (giorno 15-21): lo script controlla il giorno
 # (generateSealedTierlist.thursday_post == "grading") e negli altri giovedi' non fa nulla.
 
 on:
