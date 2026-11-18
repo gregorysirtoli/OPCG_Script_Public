@@ -959,6 +959,45 @@ def _pick_grade10_count_baseline_around(
     return _extract_grade10_total_count(baseline_doc)
 
 
+def _extract_bgs10_counts(doc: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """(BGS 10 totali = Pristine + Black Label, solo Black Label, totale gradate) di un documento BgsCardsGradingPopulation."""
+    if not isinstance(doc, dict):
+        return None, None, None
+    pristine = _to_number(doc.get("bgs10"))
+    black = _to_number(doc.get("bgs10black"))
+    total = _to_number(doc.get("bgsTotal"))
+    if pristine is None and black is None:
+        return None, None, total
+    return (pristine or 0.0) + (black or 0.0), black, total
+
+
+def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict[str, Optional[float]]:
+    """Conteggi BGS 10 (Pristine + Black Label) dalla storia BgsCardsGradingPopulation della carta (piu' recente prima)."""
+    counted = [doc for doc in docs if _extract_bgs10_counts(doc)[0] is not None]
+    latest_count, latest_black, latest_total = _extract_bgs10_counts(counted[0]) if counted else (None, None, None)
+    previous_count = _extract_bgs10_counts(counted[1])[0] if len(counted) > 1 else None
+    gem_rate = _round2(latest_count / latest_total * 100.0) if latest_count is not None and latest_total else None
+
+    def baseline(days: int, max_days: float) -> Optional[float]:
+        # stesse finestre del PSA; lo snapshot piu' recente non fa da baseline di se stesso (storia piu' corta della finestra)
+        doc = _get_closest_around(counted, now - timedelta(days=days), max_days=max_days) if counted else None
+        return _extract_bgs10_counts(doc)[0] if doc is not None and doc is not counted[0] else None
+
+    count_30d, count_90d, count_180d = baseline(30, 7), baseline(90, 14), baseline(180, 56)
+    return {
+        "bgs10Count": _as_number_or_none(latest_count),
+        "bgs10BlackCount": _as_number_or_none(latest_black),
+        "bgs10GemRate": _as_number_or_none(gem_rate),  # %
+        "bgs10Count30d": _as_number_or_none(count_30d),
+        "bgs10Count90d": _as_number_or_none(count_90d),
+        "bgs10Count180d": _as_number_or_none(count_180d),
+        "bgs10CountPercentageChange30d": _calc_pct_change(latest_count, count_30d),  # %
+        "bgs10CountPercentageChange90d": _calc_pct_change(latest_count, count_90d),  # %
+        "bgs10CountPercentageChange180d": _calc_pct_change(latest_count, count_180d),  # %
+        "bgs10CountPercentageChange": _calc_pct_change(latest_count, previous_count),  # %
+    }
+
+
 def _extract_latest_psa_gem_rate(docs: List[Dict[str, Any]]) -> Optional[float]:
     for doc in docs:
         provider = str(doc.get("gradingProvider") or "").strip().lower()
@@ -1434,8 +1473,10 @@ def compute_market_data_for_item(
     psa10_growth_rate: Optional[float] = None,
     population_docs: Optional[List[Dict[str, Any]]] = None,
     previous_stamp: Optional[str] = None,
+    bgs_population_docs: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """previous_stamp: chiave dello stamp attuale della carta (CardsStamps), per l'isteresi."""
+    """previous_stamp: chiave dello stamp attuale della carta (CardsStamps), per l'isteresi.
+    bgs_population_docs: storia BgsCardsGradingPopulation della carta (via beckettId), piu' recente prima."""
     latest = prices[0] if prices else None
 
     # Current series (USD)
@@ -1613,6 +1654,8 @@ def compute_market_data_for_item(
     psa10_count_percentage_change_180d = _calc_pct_change(psa10_count, psa10_count_180d)
     psa10_count_percentage_change = _calc_pct_change(psa10_count, psa10_count_previous)
 
+    bgs10_population = _bgs10_population_metrics(bgs_population_docs or [], now)
+
     # Segnali (grading, priceBand, buyTier, stamp) solo con un prezzo affidabile: con score basso
     # escono numeri assurdi (es. Zoro CS 25-26 1st Place a $67 con PSA 10 a $130k: gradingProfit +88.245%).
     price_confidence_score, price_confidence_reason = _compute_price_confidence_score(latest, price_7d, price_30d)
@@ -1741,8 +1784,9 @@ def compute_market_data_for_item(
         "psa10GradingProfit": gp_psa10, # %
 
         "bgs10": _as_number_or_none(bsg10_usd), # USD
-        "bsg10black": _as_number_or_none(bsg10black_usd), # USD
+        "bgs10Black": _as_number_or_none(bsg10black_usd), # USD
         "bgs10GradingProfit": gp_bsg10, # %
+        **bgs10_population,  # bgs10Count (Pristine + Black Label), bgs10BlackCount, bgs10GemRate, storico e variazioni
 
         # reference prices (baseline)
         "price1d": price_1d,
@@ -2550,13 +2594,14 @@ def update_cards_market_data(
     coll_card_stamps = db[CARD_STAMPS_COLLECTION]
     coll_card_stamp_changes = _sales_db[CARD_STAMP_CHANGES_COLLECTION]
     coll_cards_grading_population = _sales_db["CardsGradingPopulation"]
+    coll_bgs_grading_population = _sales_db["BgsCardsGradingPopulation"]
 
     q_cards: Dict[str, Any] = {}
     #q_cards["setId"] = "OP13"
     if limit_ids:
         q_cards["id"] = {"$in": limit_ids}
 
-    base_cards = list(coll_cards.find(q_cards, {"id": 1, "name": 1, "setId": 1, "type": 1, "marketData": 1}))
+    base_cards = list(coll_cards.find(q_cards, {"id": 1, "name": 1, "setId": 1, "type": 1, "marketData": 1, "beckettId": 1}))
     base_cards_by_id: Dict[str, Dict[str, Any]] = {
         card.get("id"): card
         for card in base_cards
@@ -2763,6 +2808,25 @@ def update_cards_market_data(
             break
         population_latest_prev_count[cid] = (latest_count, previous_count)
 
+    # Popolazione BGS: BgsCardsGradingPopulation.beckettId -> Cards.beckettId
+    card_id_by_beckett: Dict[int, str] = {}
+    for card in base_cards:
+        beckett_id = _to_number(card.get("beckettId"))
+        if beckett_id is not None and isinstance(card.get("id"), str):
+            card_id_by_beckett[int(beckett_id)] = card["id"]
+    bgs_population_by_card: Dict[str, List[Dict[str, Any]]] = {}
+    if card_id_by_beckett:
+        for bgs_doc in coll_bgs_grading_population.find(
+            {"beckettId": {"$in": list(card_id_by_beckett)}},
+            {"_id": 0, "beckettId": 1, "createdAt": 1, "bgs10": 1, "bgs10black": 1, "bgsTotal": 1},
+        ):
+            beckett_id = _to_number(bgs_doc.get("beckettId"))
+            card_id = card_id_by_beckett.get(int(beckett_id)) if beckett_id is not None else None
+            if card_id:
+                bgs_population_by_card.setdefault(card_id, []).append(bgs_doc)
+        for docs in bgs_population_by_card.values():
+            docs.sort(key=lambda d: d.get("createdAt") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
     existing_stamps_by_item: Dict[str, Dict[str, Any]] = {}
     for stamp_doc in coll_card_stamps.find(
         {"itemId": {"$in": ids}},
@@ -2804,6 +2868,7 @@ def update_cards_market_data(
             psa10_growth_rate,
             population_history_by_card.get(cid, []),
             previous_stamp=((previous_stamp_doc.get("stamp") or {}).get("key") if isinstance(previous_stamp_doc, dict) else None),
+            bgs_population_docs=bgs_population_by_card.get(cid, []),
         )
         md["characterPopularity"] = _match_character_popularity(
             base_card.get("name"),
