@@ -998,6 +998,16 @@ def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict
     }
 
 
+def _psa10_vs_bgs10(psa10_count: Optional[float], bgs10_count: Optional[float]) -> Dict[str, Optional[float]]:
+    """Confronto delle copie con il voto massimo sulla stessa carta (BGS 10 = Pristine + Black Label).
+    psa10ToBgs10Ratio: PSA 10 per ogni BGS 10 (538 = 538 : 1), None senza BGS 10.
+    bgs10Share: quota dei BGS 10 sul totale dei 10 PSA + BGS, in %."""
+    ratio = _round2(psa10_count / bgs10_count) if psa10_count is not None and bgs10_count else None
+    total = (psa10_count or 0.0) + (bgs10_count or 0.0)
+    share = _round2(bgs10_count / total * 100.0) if psa10_count is not None and bgs10_count is not None and total else None
+    return {"psa10ToBgs10Ratio": ratio, "bgs10Share": share}
+
+
 def _extract_latest_psa_gem_rate(docs: List[Dict[str, Any]]) -> Optional[float]:
     for doc in docs:
         provider = str(doc.get("gradingProvider") or "").strip().lower()
@@ -1655,6 +1665,7 @@ def compute_market_data_for_item(
     psa10_count_percentage_change = _calc_pct_change(psa10_count, psa10_count_previous)
 
     bgs10_population = _bgs10_population_metrics(bgs_population_docs or [], now)
+    bgs10_population.update(_psa10_vs_bgs10(_as_number_or_none(psa10_count), bgs10_population.get("bgs10Count")))
 
     # Segnali (grading, priceBand, buyTier, stamp) solo con un prezzo affidabile: con score basso
     # escono numeri assurdi (es. Zoro CS 25-26 1st Place a $67 con PSA 10 a $130k: gradingProfit +88.245%).
@@ -1786,7 +1797,8 @@ def compute_market_data_for_item(
         "bgs10": _as_number_or_none(bsg10_usd), # USD
         "bgs10Black": _as_number_or_none(bsg10black_usd), # USD
         "bgs10GradingProfit": gp_bsg10, # %
-        **bgs10_population,  # bgs10Count (Pristine + Black Label), bgs10BlackCount, bgs10GemRate, storico e variazioni
+        **bgs10_population,  # bgs10Count (Pristine + Black Label), bgs10BlackCount, bgs10GemRate, storico e variazioni,
+                             # psa10ToBgs10Ratio, bgs10Share (%)
 
         # reference prices (baseline)
         "price1d": price_1d,
