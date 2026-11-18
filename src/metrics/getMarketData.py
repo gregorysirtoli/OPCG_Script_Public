@@ -972,11 +972,18 @@ def _extract_bgs10_counts(doc: Dict[str, Any]) -> Tuple[Optional[float], Optiona
 
 
 def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict[str, Optional[float]]:
-    """Conteggi BGS 10 (Pristine + Black Label) dalla storia BgsCardsGradingPopulation della carta (piu' recente prima)."""
+    """Conteggi BGS 10 (Pristine + Black Label) dalla storia BgsCardsGradingPopulation della carta (piu' recente prima).
+
+    bgs10GemRate (BGS 10 %): (BGS 10 Pristine + Black Label) / copie gradate da Beckett x 100, come psa10GemRate per PSA.
+    Misura quanto e' difficile ottenere il 10 da Beckett per quella carta: alto = stampa, centratura e taglio puliti
+    (o copie molto selezionate prima dell'invio); vicino a 0 = probabile difetto ricorrente di produzione che ferma
+    le copie a 9.5 o meno. Non confronta gli enti tra loro: per quello c'e' psa10ToBgs10Ratio.
+    bgs10BlackRate: solo Black Label / copie gradate x 100 (es. Gol.D.Roger Manga OP09-118: 95 su 600 = 15.83%)."""
     counted = [doc for doc in docs if _extract_bgs10_counts(doc)[0] is not None]
     latest_count, latest_black, latest_total = _extract_bgs10_counts(counted[0]) if counted else (None, None, None)
     previous_count = _extract_bgs10_counts(counted[1])[0] if len(counted) > 1 else None
     gem_rate = _round2(latest_count / latest_total * 100.0) if latest_count is not None and latest_total else None
+    black_rate = _round2(latest_black / latest_total * 100.0) if latest_black is not None and latest_total else None
 
     def baseline(days: int, max_days: float) -> Optional[float]:
         # stesse finestre del PSA; lo snapshot piu' recente non fa da baseline di se stesso (storia piu' corta della finestra)
@@ -987,7 +994,8 @@ def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict
     return {
         "bgs10Count": _as_number_or_none(latest_count),
         "bgs10BlackCount": _as_number_or_none(latest_black),
-        "bgs10GemRate": _as_number_or_none(gem_rate),  # %
+        "bgs10GemRate": _as_number_or_none(gem_rate),  # % BGS 10 (Pristine + Black Label) sulle gradate
+        "bgs10BlackRate": _as_number_or_none(black_rate),  # % Black Label sulle gradate
         "bgs10Count30d": _as_number_or_none(count_30d),
         "bgs10Count90d": _as_number_or_none(count_90d),
         "bgs10Count180d": _as_number_or_none(count_180d),
