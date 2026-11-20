@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
   schedule:
-    # 19:47 UTC, 2 ore dopo la pubblicazione (17:47 UTC): ogni checkpoint cade a N giorni + ~2h anche se
+    # 19:47 UTC, 2-4 ore dopo la pubblicazione (15:47 UTC, riserva 17:47): ogni checkpoint cade a N giorni + ~2-4h anche se
     # GitHub ritarda la pubblicazione, senza slittare al giorno dopo
     - cron: "47 19 * * *"
 

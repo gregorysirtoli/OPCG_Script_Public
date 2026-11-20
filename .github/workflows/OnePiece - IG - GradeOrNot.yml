@@ -1,17 +1,17 @@
 name: OnePiece - IG - Grade It or Not
 
-# Il terzo giovedi' del mese (giorno 15-21): lo script controlla il giorno
-# (generateSealedTierlist.thursday_post == "grading") e negli altri giovedi' non fa nulla.
+# Il secondo sabato del mese (giorno 8-14): lo script controlla il giorno
+# (generateSealedTierlist.saturday_post == "grading") e negli altri sabati non fa nulla (tocca al Top Cards).
 
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post anche se oggi non e' il terzo giovedi' del mese (giorno 15-21)"
+        description: "Genera il post anche se oggi non e' il secondo sabato del mese (giorno 8-14)"
         type: boolean
         default: false
   schedule:
-    - cron: "37 13 * * 4"
+    - cron: "47 3 * * 6"
 
 jobs:
   generate-grade-or-not:

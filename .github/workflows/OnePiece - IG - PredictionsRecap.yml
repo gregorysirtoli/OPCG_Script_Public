@@ -1,14 +1,16 @@
 name: OnePiece - IG - Prediction Check
 
-# Solo ad avvio manuale: il suo giovedi' (il quarto dei mesi con cinque giovedi') e' passato alla Set Heatmap
-# (OnePiece - IG - SetHeatmap.yml). Senza l'input "force" lo script non crea il post.
+# Il quinto giovedi' dei mesi che ce l'hanno: lo script controlla il giorno (generateSealedTierlist.thursday_post ==
+# "recap") e negli altri giovedi' non fa nulla. In un altro giorno con l'input "force".
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post (senza, lo script si ferma: non e' piu' a calendario)"
+        description: "Genera il post anche se oggi non e' il quinto giovedi' del mese"
         type: boolean
-        default: true
+        default: false
+  schedule:
+    - cron: "47 3 * * 4"
 
 jobs:
   generate-predictions-recap:

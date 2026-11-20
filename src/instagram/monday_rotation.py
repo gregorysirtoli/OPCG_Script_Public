@@ -1,6 +1,6 @@
 """
-Post Instagram del lunedi', a rotazione di quattro settimane (generateSealedTierlist.monday_post):
-Market Movers pump, Market Insight promo, Market Movers dump, Market Insight promo.
+Post Instagram del lunedi', a settimane alterne (generateSealedTierlist.monday_post): Market Movers pump e dump.
+Il Market Insight promo resta solo ad avvio manuale (MONDAY_POST=promo).
 
     python -m src.instagram.monday_rotation
 

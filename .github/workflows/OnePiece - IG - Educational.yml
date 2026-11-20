@@ -2,7 +2,7 @@ name: OnePiece - IG - Educational
 
 # Carosello educativo lungo "Collector 101" (src/instagram/educational.py), ogni venerdi' (al posto del Market Insight
 # Mid Tier). Prima gli argomenti di PLANNED_TOPICS non ancora usciti, poi argomenti nuovi. Un post richiede da 15 minuti
-# a circa un'ora (revisione dei fatti con Claude): la bozza e' pronta prima della pubblicazione delle 17:47 UTC.
+# a circa un'ora (revisione dei fatti con Claude): generato alle 03:47 UTC, e' pronto per la pubblicazione delle 15:47 UTC.
 # Claude fa tutto da solo: sceglie un argomento nuovo (finanza, investimento, lettura del mercato, grading, collezionismo,
 # lezioni dagli altri TCG, focus One Piece) con ricerca web, prende carte, prodotti e prezzi dal DB, scrive slide e caption.
 # Il post finisce in InstagramPosts come bozza.
@@ -10,7 +10,7 @@ name: OnePiece - IG - Educational
 on:
   workflow_dispatch:
   schedule:
-    - cron: "37 13 * * 5"
+    - cron: "47 3 * * 5"
 
 jobs:
   generate-educational:

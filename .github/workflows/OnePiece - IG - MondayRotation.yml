@@ -12,7 +12,7 @@ on:
         options: [auto, pump, dump, promo]
         default: auto
   schedule:
-    - cron: "37 13 * * 1"
+    - cron: "47 3 * * 1"
 
 jobs:
   generate-monday-post:

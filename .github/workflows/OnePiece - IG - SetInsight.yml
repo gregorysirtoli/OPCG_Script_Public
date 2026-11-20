@@ -1,7 +1,7 @@
 name: OnePiece - IG - Set Insight
 
-# Ogni sabato: lo script pubblica solo il primo sabato del mese (generateSealedTierlist.saturday_post == "set"),
-# quando il Top Cards si ferma. Da GitHub si puo' forzare con l'input "force".
+# Ogni giovedi': lo script pubblica solo il terzo giovedi' del mese, giorno 15-21 (generateSealedTierlist.thursday_post
+# == "set"). Da GitHub si puo' forzare con l'input "force".
 on:
   workflow_dispatch:
     inputs:
@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "37 13 * * 6"
+    - cron: "47 3 * * 4"
 
 jobs:
   generate-set-insight:

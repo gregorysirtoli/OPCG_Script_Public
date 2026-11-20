@@ -1,17 +1,17 @@
 name: OnePiece - IG - Pop Report
 
-# Il quarto giovedi' dei mesi con cinque giovedi': lo script controlla il giorno
-# (generateSealedTierlist.thursday_post == "pop_report") e negli altri giovedi' non fa nulla.
+# Il quarto sabato del mese (giorno 22-28): lo script controlla il giorno
+# (generateSealedTierlist.saturday_post == "pop_report") e negli altri sabati non fa nulla (tocca al Top Cards).
 
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post anche se oggi non e' il quarto giovedi' di un mese con cinque giovedi'"
+        description: "Genera il post anche se oggi non e' il quarto sabato del mese (giorno 22-28)"
         type: boolean
         default: false
   schedule:
-    - cron: "37 13 * * 4"
+    - cron: "47 3 * * 6"
 
 jobs:
   generate-pop-report:

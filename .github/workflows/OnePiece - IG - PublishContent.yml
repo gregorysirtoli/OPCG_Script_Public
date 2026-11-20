@@ -2,10 +2,17 @@ name: OnePiece - IG - Publish Content
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Pubblica anche se oggi e' gia' uscito un post"
+        type: boolean
+        default: false
   schedule:
-    # pubblica 1 bozza al giorno alle 17:47 UTC = 18:47 a Roma in inverno, 19:47 in estate (non allo scoccare
-    # dell'ora, quando GitHub ritarda di piu' i job schedulati; i post vengono
-    # generati alle 13:37 UTC, 4 ore prima); gli insights si leggono alle 19:47 UTC, allineati a questo orario
+    # Un post al giorno nella fascia migliore (15-17 UTC: 16:47-18:47 a Roma d'inverno, 10:47-12:47 a New York).
+    # I post si generano alle 03:47 UTC: anche con i ritardi di GitHub e dei passaggi con Claude (finora fino a ~9 ore)
+    # la bozza e' pronta. 15:47 e' il giro principale; 17:47 la riserva per una bozza in ritardo: pubblica solo se oggi
+    # non e' ancora uscito niente (publishContent.published_today) e, se non c'e' nessuna bozza, manda la mail.
+    - cron: "47 15 * * *"
     - cron: "47 17 * * *"
 
 jobs:
@@ -18,6 +25,13 @@ jobs:
       MONGODB_DB: ${{ secrets.MONGODB_DB_ONEPIECE }}
       INSTAGRAM_IG_USER_ID: ${{ secrets.INSTAGRAM_IG_USER_ID }}
       INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+      PUBLISH_FORCE: ${{ inputs.force && '1' || '0' }}
+      # mail "nessuna bozza" solo all'ultimo giro del giorno (o negli avvii manuali)
+      PUBLISH_FINAL_ATTEMPT: ${{ (github.event_name == 'workflow_dispatch' || github.event.schedule == '47 17 * * *') && '1' || '0' }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
     steps:
       - name: Checkout repo

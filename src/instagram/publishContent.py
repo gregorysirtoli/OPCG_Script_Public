@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-def publish_instagram_content() -> None:
+def publish_instagram_content() -> str:
     from private_providers.instagram import publishContent as publish_content_provider
 
     print("[IG] Starting Instagram publish workflow")
@@ -27,9 +27,11 @@ def publish_instagram_content() -> None:
     print(f"[IG] DB: {db_name}")
     print("[IG] Delegating to provider main()")
 
-    publish_content_provider.main()
+    # "published", "already_published" (oggi e' gia' uscito un post) o "no_draft"
+    result = publish_content_provider.main() or "published"
 
-    print("[IG] Instagram publish workflow completed")
+    print(f"[IG] Instagram publish workflow completed ({result})")
+    return result
 
 
 if __name__ == "__main__":
@@ -41,7 +43,16 @@ if __name__ == "__main__":
     start_dt = datetime.now()
 
     try:
-        publish_instagram_content()
+        result = publish_instagram_content()
+        if result == "already_published":
+            sys.exit(0)
+        if result == "no_draft":
+            # mail solo all'ultimo giro del giorno (PUBLISH_FINAL_ATTEMPT): al primo la bozza puo' essere in ritardo
+            if os.getenv("PUBLISH_FINAL_ATTEMPT", "").strip().lower() in {"1", "true", "yes", "on"}:
+                send_email("[INSTAGRAM] No post today: no draft to publish",
+                           f"{datetime.now():%Y-%m-%d %H:%M} - nessuna bozza pronta in InstagramPosts all'ultimo giro di "
+                           "pubblicazione. Controllare i workflow di generazione di oggi su GitHub Actions.")
+            sys.exit(0)
 
         end_time = time.time()
         end_dt = datetime.now()

@@ -12,7 +12,7 @@ on:
         options: [auto, USD_200_PLUS, USD_50_200, PROMO]
         default: auto
   schedule:
-    - cron: "37 13 * * 3"
+    - cron: "47 3 * * 3"
 
 jobs:
   generate-market-insight:

@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "37 13 * * 4"
+    - cron: "47 3 * * 4"
 
 jobs:
   generate-predictions:
