@@ -146,10 +146,25 @@ def latest_graded_max(db: Database, item_id: Any, fields: Iterable[str]) -> Opti
     return max(values) if values else None
 
 
-def latest_cards_metrics_psa10(sales_db: Database, item_id: Any) -> Optional[float]:
-    """PSA 10 di CardsMetrics (latestPrice del documento piu' recente): lo stesso fallback di getMarketData."""
+def psa_id_values(value: Any) -> List[Any]:
+    """psaId da cercare nel DB sales (numero e stringa per i dati vecchi), [] se non valido.
+    CardsMetrics, CardsGradingPopulation e CardsSalesHistory sono legate alle carte solo con psaId = Cards.psaId."""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return []
+    if num <= 0 or num != int(num):
+        return []
+    return [int(num), str(int(num))]
+
+
+def latest_cards_metrics_psa10(sales_db: Database, psa_id: Any) -> Optional[float]:
+    """PSA 10 di CardsMetrics (latestPrice del documento piu' recente) per Cards.psaId: lo stesso fallback di getMarketData."""
+    values = psa_id_values(psa_id)
+    if not values:
+        return None
     doc = sales_db["CardsMetrics"].find_one(
-        {"cardId": item_id, "latestPrice": {"$gt": 0}}, {"latestPrice": 1}, sort=[("createdAt", -1)]
+        {"psaId": {"$in": values}, "latestPrice": {"$gt": 0}}, {"latestPrice": 1}, sort=[("createdAt", -1)]
     )
     return doc.get("latestPrice") if doc else None
 

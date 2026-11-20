@@ -994,6 +994,7 @@ def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict
     return {
         "bgs10Count": _as_number_or_none(latest_count),
         "bgs10BlackCount": _as_number_or_none(latest_black),
+        "bgsTotalCount": _as_number_or_none(latest_total),  # copie gradate da Beckett (tutti i voti)
         "bgs10GemRate": _as_number_or_none(gem_rate),  # % BGS 10 (Pristine + Black Label) sulle gradate
         "bgs10BlackRate": _as_number_or_none(black_rate),  # % Black Label sulle gradate
         "bgs10Count30d": _as_number_or_none(count_30d),
@@ -2621,7 +2622,7 @@ def update_cards_market_data(
     if limit_ids:
         q_cards["id"] = {"$in": limit_ids}
 
-    base_cards = list(coll_cards.find(q_cards, {"id": 1, "name": 1, "setId": 1, "type": 1, "marketData": 1, "beckettId": 1}))
+    base_cards = list(coll_cards.find(q_cards, {"id": 1, "name": 1, "setId": 1, "type": 1, "marketData": 1, "beckettId": 1, "psaId": 1}))
     base_cards_by_id: Dict[str, Dict[str, Any]] = {
         card.get("id"): card
         for card in base_cards
@@ -2740,39 +2741,50 @@ def update_cards_market_data(
     for cid in ids:
         graded_first.setdefault(cid, {})["setId"] = (base_cards_by_id.get(cid) or {}).get("setId")
 
+    # Le collection PSA (CardsMetrics, CardsGradingPopulation) sono per psaId, collegate a Cards.psaId
+    # (niente piu' cardId/cardObjectId). Piu' varianti possono avere lo stesso psaId.
+    card_ids_by_psa: Dict[int, List[str]] = {}
+    for card in base_cards:
+        psa_id = _to_number(card.get("psaId"))
+        if psa_id is not None and psa_id > 0 and isinstance(card.get("id"), str):
+            card_ids_by_psa.setdefault(int(psa_id), []).append(card["id"])
+    # psaId numero (formato attuale) o stringa (dati vecchi)
+    psa_values: List[Any] = [v for p in card_ids_by_psa for v in (p, str(p))]
+
     # CardsMetrics fallback: if a card has no psa10 in Prices, use latestPrice from the most recent CardsMetrics doc.
     coll_cards_metrics = _sales_db["CardsMetrics"]
+    metrics_latest_by_psa: Dict[int, Dict[str, Any]] = {}
+    if psa_values:
+        for doc in coll_cards_metrics.find(
+            {"psaId": {"$in": psa_values}},
+            {
+                "psaId": 1,
+                "createdAt": 1,
+                "latestPrice": 1,
+                "growthRate": 1,
+            },
+        ):
+            psa_id = _to_number(doc.get("psaId"))
+            if psa_id is None:
+                continue
+            created_at = doc.get("createdAt")
+            prev = metrics_latest_by_psa.get(int(psa_id))
+            if prev is not None:
+                prev_ts = prev.get("createdAt")
+                if not isinstance(created_at, datetime):
+                    continue
+                if isinstance(prev_ts, datetime) and created_at <= prev_ts:
+                    continue
+            metrics_latest_by_psa[int(psa_id)] = doc
+
     cards_metrics_latest: Dict[str, Dict[str, Optional[float]]] = {}
-    cards_metrics_latest_ts: Dict[str, datetime] = {}
-    for doc in coll_cards_metrics.find(
-        {"cardId": {"$in": ids}},
-        {
-            "cardId": 1,
-            "createdAt": 1,
-            "latestPrice": 1,
-            "growthRate": 1,
-        },
-    ):
-        card_id = doc.get("cardId")
-        latest_price = doc.get("latestPrice")
-        created_at = doc.get("createdAt")
-        if not isinstance(card_id, str):
-            continue
-
-        prev_ts = cards_metrics_latest_ts.get(card_id)
-        if prev_ts is not None and isinstance(created_at, datetime) and created_at <= prev_ts:
-            continue
-
-        if prev_ts is None and card_id in cards_metrics_latest and not isinstance(created_at, datetime):
-            continue
-
-        v = _to_number(latest_price)
-        cards_metrics_latest[card_id] = {
-            "latestPrice": v,
+    for psa_id, doc in metrics_latest_by_psa.items():
+        entry = {
+            "latestPrice": _to_number(doc.get("latestPrice")),
             "psa10GrowthRate": _extract_cards_metrics_growth_value(doc),
         }
-        if isinstance(created_at, datetime):
-            cards_metrics_latest_ts[card_id] = created_at
+        for card_id in card_ids_by_psa.get(psa_id, []):
+            cards_metrics_latest[card_id] = entry
 
     # Merge CardsMetrics latestPrice as psa10 fallback into graded_first.
     for cid in ids:
@@ -2792,21 +2804,22 @@ def update_cards_market_data(
 
     population_history_by_card: Dict[str, List[Dict[str, Any]]] = {}
     population_latest_prev_count: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
-    population_cursor = coll_cards_grading_population.find(
-        {"cardId": {"$in": ids}},
-        {
-            "cardId": 1,
-            "createdAt": 1,
-            "grade10.totalCount": 1,
-            "gemRate": 1,
-            "gradingProvider": 1,
-        },
-    )
-
-    for population_doc in population_cursor:
-        card_id = population_doc.get("cardId")
-        if isinstance(card_id, str):
-            population_history_by_card.setdefault(card_id, []).append(population_doc)
+    # Popolazione PSA: CardsGradingPopulation.psaId -> Cards.psaId (mappa card_ids_by_psa sopra)
+    if psa_values:
+        population_cursor = coll_cards_grading_population.find(
+            {"psaId": {"$in": psa_values}},
+            {
+                "psaId": 1,
+                "createdAt": 1,
+                "grade10.totalCount": 1,
+                "gemRate": 1,
+                "gradingProvider": 1,
+            },
+        )
+        for population_doc in population_cursor:
+            psa_id = _to_number(population_doc.get("psaId"))
+            for card_id in card_ids_by_psa.get(int(psa_id), []) if psa_id is not None else []:
+                population_history_by_card.setdefault(card_id, []).append(population_doc)
 
     for docs in population_history_by_card.values():
         docs.sort(

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post anche se oggi non e' il quarto giovedi' di un mese con cinque giovedi'"
+        description: "Genera il post anche se oggi non e' il terzo giovedi' del mese (giorno 15-21)"
         type: boolean
         default: false
   schedule:

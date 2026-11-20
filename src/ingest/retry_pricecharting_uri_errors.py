@@ -207,6 +207,7 @@ def main() -> int:
         "yuyuteiId": 1,
         "yuyuteiLink": 1,
         "cardTraderId": 1,
+        "psaId": 1,  # CardsMetrics (fallback PSA 10) per psaId
         "language": 1,
         "releaseDate": 1,
     }
@@ -476,7 +477,7 @@ def main() -> int:
                 # gradati per _cardmarket_low_as_price: servono solo con Cardmarket senza vendite
                 if _cardmarket_has_no_sales(row) and not any(row.get(f) for f in GRADED_REFERENCE_FIELDS):
                     graded = [latest_graded_max(db, item_id, GRADED_REFERENCE_FIELDS),
-                              latest_cards_metrics_psa10(sales_db, item_id)]
+                              latest_cards_metrics_psa10(sales_db, doc.get("psaId"))]
                     graded_max = max((g for g in graded if g), default=None)
                     if graded_max is not None:
                         redline_row = {**redline_row, GRADED_MAX_KEY: graded_max}

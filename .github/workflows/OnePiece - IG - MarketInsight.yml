@@ -1,6 +1,7 @@
 name: OnePiece - IG - Market Insight
 
-# Mercoledi' una carta da $200 in su, venerdi' una da $50 a $200: la fascia la sceglie lo script dal giorno.
+# Mercoledi' una carta da $200 in su (il venerdi' ora e' di Collector 101, Educational.yml): la fascia la sceglie lo
+# script dal giorno. La Mid Tier ($50-$200) resta ad avvio manuale con price_band = USD_50_200.
 # Da GitHub si puo' forzare con l'input "price_band" (PROMO = edizione promo, che il lunedi' esce da MondayRotation.yml).
 on:
   workflow_dispatch:
@@ -11,7 +12,7 @@ on:
         options: [auto, USD_200_PLUS, USD_50_200, PROMO]
         default: auto
   schedule:
-    - cron: "37 13 * * 3,5"
+    - cron: "37 13 * * 3"
 
 jobs:
   generate-market-insight:
