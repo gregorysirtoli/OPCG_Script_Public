@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   schedule:
-    # ogni domenica: lo step "Select tierlist" lascia proseguire solo l'ultima domenica dei mesi dispari
+    # ogni domenica: lo step "Select tierlist" lascia proseguire solo la 2a domenica dei mesi dispari
     # (nei mesi pari quella domenica esce la Set Heatmap, OnePiece - IG - SetHeatmap.yml; le altre il Top Sale)
     - cron: "47 3 * * 0"
 
@@ -33,7 +33,7 @@ jobs:
       MAIL_FROM: ${{ secrets.MAIL_FROM }}
 
     steps:
-      - name: Select tierlist (last Sunday of odd months, EN)
+      - name: Select tierlist (2nd Sunday of odd months, EN)
         id: plan
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -41,15 +41,14 @@ jobs:
         run: |
           day=$(date -u +%-d)
           month=$(date -u +%-m)
-          # ultima domenica = tra sette giorni e' gia' il mese dopo
-          next_week_month=$(date -u -d "+7 days" +%-m)
-          if [ "$EVENT_NAME" = "schedule" ] && [ "$next_week_month" -eq "$month" ]; then
-            echo "Day $day is not the last Sunday of the month: nothing to do"
+          # 2a domenica = giorno 8-14 (generateSealedTierlist.sunday_post)
+          if [ "$EVENT_NAME" = "schedule" ] && { [ "$day" -lt 8 ] || [ "$day" -gt 14 ]; }; then
+            echo "Day $day is not the 2nd Sunday of the month: nothing to do"
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$EVENT_NAME" = "schedule" ] && [ $((month % 2)) -eq 0 ]; then
-            echo "Month $month is even: the last Sunday is the Set Heatmap post, no tierlist"
+            echo "Month $month is even: the 2nd Sunday is the Set Heatmap post, no tierlist"
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

@@ -1,12 +1,12 @@
 name: OnePiece - IG - Set Heatmap
 
-# L'ultima domenica dei mesi pari, al posto della Tierlist dei set (che esce nei mesi dispari): lo script controlla
+# La 2a domenica dei mesi pari, al posto della Tierlist dei set (che esce nei mesi dispari): lo script controlla
 # il giorno (generateSealedTierlist.sunday_post == "heatmap") e nelle altre domeniche non fa nulla (Top Sale).
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Genera il post anche se oggi non e' l'ultima domenica di un mese pari"
+        description: "Genera il post anche se oggi non e' la 2a domenica di un mese pari"
         type: boolean
         default: false
   schedule:
