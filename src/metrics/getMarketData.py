@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import re
 from math import exp, log1p, sqrt, tanh
 from statistics import median
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from pymongo import InsertOne, UpdateOne
 from pymongo.database import Database
@@ -971,7 +971,48 @@ def _extract_bgs10_counts(doc: Dict[str, Any]) -> Tuple[Optional[float], Optiona
     return (pristine or 0.0) + (black or 0.0), black, total
 
 
-def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict[str, Optional[float]]:
+# Aggiunte della settimana alla pop (PSA 10, BGS 10 Black Label): gli snapshot di CardsGradingPopulation e
+# BgsCardsGradingPopulation arrivano circa una volta a settimana, in giorni non fissi. Base = snapshot piu'
+# vicino a 7 giorni prima dell'ultimo (entro POP_WEEK_MAX_DAYS, quindi 3-11 giorni prima); niente valore se
+# l'ultimo snapshot e' piu' vecchio di POP_WEEK_STALE_DAYS rispetto all'ultima osservazione del prezzo.
+POP_WEEK_MAX_DAYS = 4
+POP_WEEK_STALE_DAYS = 10
+
+
+def _pop_added_last_week(
+    docs: List[Dict[str, Any]],
+    extract: Callable[[Dict[str, Any]], Optional[float]],
+    now: datetime,
+) -> Optional[float]:
+    """Copie aggiunte tra l'ultimo snapshot e quello di circa una settimana prima (docs piu' recente prima).
+    Puo' essere negativo (correzioni della pop): il sito mostra solo i valori > 0."""
+    counted = [doc for doc in docs if extract(doc) is not None and _parse_created_at(doc) is not None]
+    if len(counted) < 2:
+        return None
+    latest_dt = _parse_created_at(counted[0])
+    if (now - latest_dt).total_seconds() / 86400.0 > POP_WEEK_STALE_DAYS:
+        return None
+    baseline_doc = _get_closest_around(counted[1:], latest_dt - timedelta(days=7), max_days=POP_WEEK_MAX_DAYS)
+    if baseline_doc is None:
+        return None
+    return _as_number_or_none(extract(counted[0]) - extract(baseline_doc))
+
+
+def _bgs10_black_first_at(docs: List[Dict[str, Any]]) -> Optional[datetime]:
+    """Data del primo snapshot BGS con almeno un Black Label (docs piu' recente prima).
+    Solo se prima c'e' uno snapshot valido (bgsTotal presente) senza Black Label: se la carta li aveva gia' nel
+    primo snapshot registrato non sappiamo quando e' arrivato il primo, quindi None."""
+    seen_without_black = False
+    for doc in reversed(docs):
+        if _to_number(doc.get("bgsTotal")) is None or _parse_created_at(doc) is None:
+            continue
+        if (_to_number(doc.get("bgs10black")) or 0.0) > 0:
+            return _parse_created_at(doc) if seen_without_black else None
+        seen_without_black = True
+    return None
+
+
+def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict[str, Any]:
     """Conteggi BGS 10 (Pristine + Black Label) dalla storia BgsCardsGradingPopulation della carta (piu' recente prima).
 
     bgs10GemRate (BGS 10 %): (BGS 10 Pristine + Black Label) / copie gradate da Beckett x 100, come psa10GemRate per PSA.
@@ -1004,6 +1045,9 @@ def _bgs10_population_metrics(docs: List[Dict[str, Any]], now: datetime) -> Dict
         "bgs10CountPercentageChange90d": _calc_pct_change(latest_count, count_90d),  # %
         "bgs10CountPercentageChange180d": _calc_pct_change(latest_count, count_180d),  # %
         "bgs10CountPercentageChange": _calc_pct_change(latest_count, previous_count),  # %
+        # Black Label aggiunti nell'ultima settimana e data del primo Black Label (sezioni della homepage)
+        "bgs10BlackCountAddedWeek": _pop_added_last_week(docs, lambda d: _extract_bgs10_counts(d)[1], now),
+        "bgs10BlackFirstAt": _bgs10_black_first_at(docs),
     }
 
 
@@ -1672,6 +1716,8 @@ def compute_market_data_for_item(
     psa10_count_percentage_change_90d = _calc_pct_change(psa10_count, psa10_count_90d)
     psa10_count_percentage_change_180d = _calc_pct_change(psa10_count, psa10_count_180d)
     psa10_count_percentage_change = _calc_pct_change(psa10_count, psa10_count_previous)
+    # PSA 10 aggiunti nell'ultima settimana (sezione della homepage)
+    psa10_count_added_week = _pop_added_last_week(count_docs, _extract_grade10_total_count, now)
 
     bgs10_population = _bgs10_population_metrics(bgs_population_docs or [], now)
     bgs10_population.update(_psa10_vs_bgs10(_as_number_or_none(psa10_count), bgs10_population.get("bgs10Count")))
@@ -1801,6 +1847,7 @@ def compute_market_data_for_item(
         "psa10CountPercentageChange90d": psa10_count_percentage_change_90d, # %
         "psa10CountPercentageChange180d": psa10_count_percentage_change_180d, # %
         "psa10CountPercentageChange": psa10_count_percentage_change, # %
+        "psa10CountAddedWeek": psa10_count_added_week,  # copie PSA 10 aggiunte nell'ultima settimana
         "psa10GradingProfit": gp_psa10, # %
 
         "bgs10": _as_number_or_none(bsg10_usd), # USD
