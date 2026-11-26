@@ -114,6 +114,15 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
 - Mediane, non medie. Percentuali solo con almeno 30 valutazioni (`sampleTooSmall` altrimenti).
 - `thinMarket`: meno di 3 prezzi nella finestra di uscita o nessuna vendita stimata.
 
+## Buchi noti
+
+- **Previsioni delle settimane del 9, 16 e 23 novembre 2026**: nessuna fotografia. `snapshot_forecasts`
+  registrava solo se il giro cadeva di lunedi' UTC, ma lo schedule di GitHub partiva con ore di ritardo e il
+  giro del lunedi' finiva di martedi'. Corretto il 2026-11-26 (prima fotografia della settimana senza
+  fotografia). Le previsioni di quei giorni non esistono piu' (`ml_predictions_daily` e' sovrascritta ogni
+  giorno) e non vanno ricostruite: il buco e' dichiarato sul sito (`FORECAST_SNAPSHOT_GAPS` in
+  `OPCG/app/track-record/page.tsx`). Le chiamate di stamp non hanno buchi.
+
 ## Regole del registro
 
 1. **Solo in aggiunta**: il codice scrive solo con insert su `_id` deterministici. Per renderlo vincolante
