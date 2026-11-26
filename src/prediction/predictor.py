@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import joblib
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .config import MongoConfig, MLConfig
 from .io_mongo import get_db, load_collection, upsert_many
@@ -17,13 +17,24 @@ from .modeling import predict_tier_models
 from .attributes import build_feature_cols
 from src.trackrecord.ledger import TRACK_RECORD_FORECASTS_COLLECTION, insert_append_only
 
-# Giorno della settimana (0 = lunedi') in cui le previsioni entrano nel track record. Una
+# Giorno della settimana (0 = lunedi') da cui parte la settimana del track record. Una
 # fotografia a settimana: quelle giornaliere avrebbero finestre a 28 giorni quasi identiche.
 FORECAST_SNAPSHOT_WEEKDAY = 0
 
 
+def forecast_week_start(asof: datetime) -> str:
+    """Primo giorno (UTC, yyyy-mm-dd) della settimana di track record che contiene `asof`."""
+    days_back = (asof.weekday() - FORECAST_SNAPSHOT_WEEKDAY) % 7
+    return (asof - timedelta(days=days_back)).strftime("%Y-%m-%d")
+
+
 def snapshot_forecasts(db, preds_docs: list[dict], asof: datetime) -> None:
-    if asof.weekday() != FORECAST_SNAPSHOT_WEEKDAY:
+    # Fotografia al primo giro della settimana che non ne ha ancora una, non solo il lunedi':
+    # lo schedule di GitHub parte con ore di ritardo e il giro del lunedi' finiva spesso dopo
+    # la mezzanotte UTC, quindi di martedi', e la settimana restava senza fotografia
+    # (mancate il 9, 16 e 23 novembre 2026). Il giorno registrato e' quello reale del giro.
+    collection = db[TRACK_RECORD_FORECASTS_COLLECTION]
+    if collection.find_one({"asOfDay": {"$gte": forecast_week_start(asof)}}, {"_id": 1}):
         return
     day = asof.strftime("%Y-%m-%d")
     rows = [
@@ -41,7 +52,7 @@ def snapshot_forecasts(db, preds_docs: list[dict], asof: datetime) -> None:
         }
         for d in preds_docs
     ]
-    inserted = insert_append_only(db[TRACK_RECORD_FORECASTS_COLLECTION], rows)
+    inserted = insert_append_only(collection, rows)
     print(f"Track record: {inserted} previsioni registrate per {day}.")
 
 

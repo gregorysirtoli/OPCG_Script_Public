@@ -8,7 +8,7 @@ al netto dei costi di vendita, rispetto al mercato della stessa fascia e con la 
 | Quando | Cosa | Dove |
 | --- | --- | --- |
 | Ogni giorno, MarketData One Piece | Cambio di stamp -> un evento | `getMarketData.update_cards_market_data(track_record=True)` -> `TrackRecordCalls` |
-| Lunedi', Prediction Daily | Fotografia delle previsioni a 28 giorni (Q20/Q50/Q80) | `predictor.snapshot_forecasts` -> `TrackRecordForecasts` |
+| Prediction Daily, primo giro della settimana (da lunedi') senza fotografia | Fotografia delle previsioni a 28 giorni (Q20/Q50/Q80) | `predictor.snapshot_forecasts` -> `TrackRecordForecasts` |
 | Ogni giorno, dopo MarketData | Esiti, calibrazione, riepilogo, impronte | `OnePiece - TrackRecord.yml` -> `src.trackrecord.evaluate` |
 
 Solo One Piece: la registrazione parte solo con `TRACK_RECORD_ENABLED=1`, impostata in
@@ -63,7 +63,7 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
   `fromKey` -> `toKey`, `rulesVersion`, `price` (valore, fonte `priceRedLine`, USD, `priceConfidenceScore`),
   `liquidity` (score, livello VERY_HIGH...VERY_LOW come il badge del sito, sellers, listings, vendite stimate
   7/30 gg), `priceBand`, `inputs` (variazioni % che hanno fatto scattare il segnale).
-- **TrackRecordForecasts** (solo in aggiunta): `_id = cardId|yyyy-mm-dd`, una riga per carta ogni lunedi'.
+- **TrackRecordForecasts** (solo in aggiunta): `_id = cardId|yyyy-mm-dd`, una riga per carta alla settimana: il primo giro di Prediction Daily da lunedi' (UTC) in poi che non trova ancora una fotografia della settimana. Lo schedule di GitHub parte con ore di ritardo, quindi il giorno puo' essere martedi'; `asOfDay` e' il giorno reale del giro.
 - **TrackRecordOutcomes** (solo in aggiunta): `_id = eventId|28d` o `|56d`. Prezzo di uscita, rendimento
   lordo e netto, soglia di costo, rendimento del mercato di fascia, scarto, calo massimo, `success`,
   `thinMarket`, `status` (`evaluated` / `no_price`).
@@ -71,8 +71,11 @@ il registro: non ha piu' TTL, ma il backfill delle regole la cancella e la riscr
   `above_q80`), errore di Q50 e della previsione "prezzo invariato".
 - **TrackRecordBenchmarks** (solo in aggiunta): mediana dei rendimenti di tutte le carte per tipo e fascia,
   per giorno e orizzonte.
-- **TrackRecordSummary** (`_id: latest`, riscritto ogni giorno): `headline`, tabella `calls` per versione
-  regole x segnale x orizzonte x fascia x liquidita' (con le righe `ALL`), tabella `forecasts` per tier,
+- **TrackRecordSummary** (`_id: latest`, riscritto ogni giorno): `headline` (con il contesto delle chiamate
+  controllate a 4 settimane con le regole correnti: `checked4w`, `checked4wFirstCallAt` / `checked4wLastCallAt`,
+  `marketMedianReturn4wPct`),
+  tabella `calls` per versione regole x segnale x orizzonte x fascia x liquidita' (con le righe `ALL`; per riga
+  anche le mediane di rendimento lordo, mercato e soglia di costo), tabella `forecasts` per tier,
   `pickSimulation` ("100 $ su ogni chiamata": per lato `buy` / `speculative` e orizzonte, solo regole correnti,
   valore finale = somma di 100 x (1 + rendimento netto), istogramma dei rendimenti netti nelle classi
   `RETURN_BUCKET_EDGES`) e `monthly` (per mese della chiamata: chiamate emesse e, per le chiamate `buy` a

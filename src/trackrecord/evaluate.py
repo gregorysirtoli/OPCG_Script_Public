@@ -392,6 +392,8 @@ def _call_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     gross = [r["grossReturnPct"] for r in evaluated]
     excess = [r["excessReturnPct"] for r in evaluated if r.get("excessReturnPct") is not None]
     drawdown = [r["maxDrawdownPct"] for r in evaluated if r.get("maxDrawdownPct") is not None]
+    bench = [r["benchmarkReturnPct"] for r in evaluated if r.get("benchmarkReturnPct") is not None]
+    cost = [r["costThresholdPct"] for r in evaluated if r.get("costThresholdPct") is not None]
     wins = sum(1 for r in evaluated if r.get("success"))
     return {
         "calls": len(rows),
@@ -400,8 +402,11 @@ def _call_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "thinMarket": sum(1 for r in evaluated if r.get("thinMarket")),
         "sampleTooSmall": not enough,
         "successRatePct": round(wins / n * 100.0, 1) if enough else None,
+        "medianGrossReturnPct": _q(gross, 0.5) if enough else None,
         "medianNetReturnPct": _q(net, 0.5) if enough else None,
         "p80NetReturnPct": _q(net, 0.8) if enough else None,
+        "medianBenchmarkReturnPct": _q(bench, 0.5) if enough and bench else None,
+        "medianCostThresholdPct": _q(cost, 0.5) if enough and cost else None,
         "medianExcessReturnPct": _q(excess, 0.5) if enough and excess else None,
         "medianMaxDrawdownPct": _q(drawdown, 0.5) if enough and drawdown else None,
         # Sell Watch: perdita evitata = quanto e' sceso il prezzo dopo la chiamata
@@ -571,6 +576,16 @@ def build_summary(db: Database, now: datetime) -> Dict[str, Any]:
     first_call = db[TRACK_RECORD_CALLS_COLLECTION].find_one({}, {"calledAt": 1}, sort=[("calledAt", 1)])
     accumulate = pick("ACCUMULATE", 28)
     sell_watch = pick("SELL_WATCH", 28)
+    # Contesto delle chiamate controllate a 4 settimane con le regole correnti: quante sono,
+    # che periodo coprono e cosa ha fatto il mercato (senza, ogni risultato e' illeggibile).
+    checked_4w = [
+        r for r in outcomes
+        if r.get("rulesVersion") == SIGNAL_RULES_VERSION and r.get("signalType") == "stamp"
+        and r.get("horizonDays") == 28 and r.get("status") == "evaluated"
+    ]
+    checked_dates = [r["calledAt"] for r in checked_4w if r.get("calledAt")]
+    market_4w = [r["benchmarkReturnPct"] for r in checked_4w if r.get("benchmarkReturnPct") is not None]
+    enough_4w = len(checked_4w) >= MIN_SAMPLE
     calibration = next((r for r in forecasts_table if r["tier"] == "ALL"), {})
     summary = {
         "_id": "latest",
@@ -592,6 +607,10 @@ def build_summary(db: Database, now: datetime) -> Dict[str, Any]:
             "accumulateEvaluated4w": accumulate.get("evaluated", 0),
             "sellWatchMedianAvoidedLoss4wPct": sell_watch.get("medianAvoidedLossPct"),
             "sellWatchEvaluated4w": sell_watch.get("evaluated", 0),
+            "checked4w": len(checked_4w),
+            "checked4wFirstCallAt": min(checked_dates) if checked_dates else None,
+            "checked4wLastCallAt": max(checked_dates) if checked_dates else None,
+            "marketMedianReturn4wPct": _q(market_4w, 0.5) if enough_4w and market_4w else None,
             "forecastInsideQ20Q80Pct": calibration.get("insidePct"),
             "forecastsEvaluated": calibration.get("evaluated", 0),
         },
