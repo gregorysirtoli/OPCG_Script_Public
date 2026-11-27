@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import traceback
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from src.core.emailer import send_email
@@ -41,6 +41,16 @@ if __name__ == "__main__":
 
     start_time = time.time()
     start_dt = datetime.now()
+
+    # PUBLISH_WINDOW_UTC="15-21" (solo i cron di GitHub): fuori da [15, 21) ora UTC non si pubblica e non si manda
+    # nessuna mail. I cron di GitHub partono anche con ore di ritardo: meglio saltare che pubblicare di notte.
+    window = os.getenv("PUBLISH_WINDOW_UTC", "").strip()
+    if window:
+        start_hour, end_hour = (int(part) for part in window.split("-"))
+        now_hour = datetime.now(timezone.utc).hour
+        if not start_hour <= now_hour < end_hour:
+            print(f"[IG] {datetime.now(timezone.utc):%H:%M} UTC is outside the publish window {window} UTC: skipping")
+            sys.exit(0)
 
     try:
         result = publish_instagram_content()

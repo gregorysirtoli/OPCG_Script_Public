@@ -1,19 +1,30 @@
 name: OnePiece - IG - Publish Content
 
 on:
+  # Avvio principale: cron-job.org chiama l'API workflow_dispatch alle 15:47 UTC (final_attempt=false) e alle 17:47 UTC
+  # (final_attempt=true). I cron di GitHub partivano con 6-10 ore di ritardo (post usciti all'1-3 di notte a Roma).
+  # Dalla UI: final_attempt resta true (mail se non c'e' nessuna bozza), come prima.
   workflow_dispatch:
     inputs:
       force:
         description: "Pubblica anche se oggi e' gia' uscito un post"
         type: boolean
         default: false
+      final_attempt:
+        description: "Ultimo giro del giorno: manda la mail se non c'e' nessuna bozza"
+        type: boolean
+        default: true
   schedule:
-    # Un post al giorno nella fascia migliore (15-17 UTC: 16:47-18:47 a Roma d'inverno, 10:47-12:47 a New York).
-    # I post si generano alle 03:47 UTC: anche con i ritardi di GitHub e dei passaggi con Claude (finora fino a ~9 ore)
-    # la bozza e' pronta. 15:47 e' il giro principale; 17:47 la riserva per una bozza in ritardo: pubblica solo se oggi
-    # non e' ancora uscito niente (publishContent.published_today) e, se non c'e' nessuna bozza, manda la mail.
+    # Riserva se cron-job.org non parte. Un post al giorno nella fascia migliore (15-17 UTC: 16:47-18:47 a Roma
+    # d'inverno, 10:47-12:47 a New York). Pubblica solo se oggi non e' ancora uscito niente
+    # (publishContent.published_today) e solo entro PUBLISH_WINDOW_UTC: un giro in ritardo di ore non pubblica di notte.
     - cron: "47 15 * * *"
     - cron: "47 17 * * *"
+
+# avvio esterno e cron di riserva non girano mai insieme: il secondo aspetta e trova il post gia' uscito
+concurrency:
+  group: ig-publish-content
+  cancel-in-progress: false
 
 jobs:
   publish-content:
@@ -26,8 +37,10 @@ jobs:
       INSTAGRAM_IG_USER_ID: ${{ secrets.INSTAGRAM_IG_USER_ID }}
       INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
       PUBLISH_FORCE: ${{ inputs.force && '1' || '0' }}
-      # mail "nessuna bozza" solo all'ultimo giro del giorno (o negli avvii manuali)
-      PUBLISH_FINAL_ATTEMPT: ${{ (github.event_name == 'workflow_dispatch' || github.event.schedule == '47 17 * * *') && '1' || '0' }}
+      # mail "nessuna bozza" solo all'ultimo giro del giorno (avvio esterno delle 17:47, avvio manuale, cron delle 17:47)
+      PUBLISH_FINAL_ATTEMPT: ${{ (github.event_name == 'workflow_dispatch' && inputs.final_attempt || github.event.schedule == '47 17 * * *') && '1' || '0' }}
+      # solo per i cron di GitHub: fuori dalle 15-21 UTC (16-22 a Roma d'inverno) il giro in ritardo non fa niente
+      PUBLISH_WINDOW_UTC: ${{ github.event_name == 'schedule' && '15-21' || '' }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
